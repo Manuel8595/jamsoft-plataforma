@@ -1,22 +1,55 @@
 import streamlit as st
-from datetime import datetime, timedelta
+from datetime import datetime
 from services.supabase_client import (
-    listar_farmacias, resumo_por_farmacia, vendas_por_dia, vendas_ultimos_dias
+    listar_farmacias, resumo_por_farmacia, vendas_por_dia
 )
+from auth_helper import esta_logado, utilizador_actual, terminar_sessao
+
+
+# ============================================================
+# VERIFICAR LOGIN (primeiro!)
+# ============================================================
+
+if not esta_logado():
+    st.switch_page("pages/0_Login.py")
+
+
+# ============================================================
+# CONFIGURACAO
+# ============================================================
 
 st.set_page_config(
     page_title="JAM Soft - Monitorizacao",
     page_icon="💊",
     layout="wide",
-    initial_sidebar_state="collapsed",
+    initial_sidebar_state="expanded",
 )
 
 
 # ============================================================
-# CACHE (evita pedir ao Supabase em cada refresh)
+# MENU LATERAL (utilizador + logout)
 # ============================================================
 
-@st.cache_data(ttl=300)  # 5 min
+user = utilizador_actual()
+
+with st.sidebar:
+    st.markdown(f"### 👤 {user['nome']}")
+    st.caption(f"📧 {user['email']}")
+    st.markdown("---")
+    
+    if st.button("🚪 Terminar Sessao", use_container_width=True):
+        terminar_sessao()
+        st.switch_page("pages/0_Login.py")
+    
+    st.markdown("---")
+    st.caption(f"🕐 {datetime.now().strftime('%d/%m/%Y %H:%M')}")
+
+
+# ============================================================
+# CACHE
+# ============================================================
+
+@st.cache_data(ttl=300)
 def carregar_farmacias():
     return listar_farmacias()
 
@@ -40,7 +73,6 @@ st.caption(f"Dados em tempo real • {datetime.now().strftime('%d/%m/%Y %H:%M')}
 
 st.markdown("---")
 
-# ===== FILTRO DE PERIODO =====
 col_f1, col_f2, col_f3 = st.columns([1, 1, 2])
 
 with col_f1:
@@ -65,34 +97,29 @@ with col_f2:
         st.rerun()
 
 with col_f3:
-    st.caption(f"Última atualização: {datetime.now().strftime('%H:%M:%S')}")
+    st.caption(f"Periodo: **{periodo}**")
 
 st.markdown("---")
 
-# ===== CARREGAR DADOS =====
 with st.spinner("A carregar..."):
     farmacias = carregar_farmacias()
     resumo = carregar_resumo(dias)
 
-# ===== METRICAS GLOBAIS =====
 total_vendas = sum(r["total"] for r in resumo.values())
 num_vendas = sum(r["num_vendas"] for r in resumo.values())
 ticket_medio_global = (total_vendas / num_vendas) if num_vendas > 0 else 0
 
 col1, col2, col3, col4 = st.columns(4)
-
 with col1:
-    st.metric("🏥 Farmacias Activas", f"{len(farmacias)}")
+    st.metric("🏥 Farmacias", f"{len(farmacias)}")
 with col2:
     st.metric("💰 Vendas", f"Kz {total_vendas:,.0f}".replace(",", "."))
 with col3:
-    st.metric("🛒 Numero de Vendas", f"{num_vendas}")
+    st.metric("🛒 Num. Vendas", f"{num_vendas}")
 with col4:
     st.metric("📊 Ticket Medio", f"Kz {ticket_medio_global:,.0f}".replace(",", "."))
 
 st.markdown("---")
-
-# ===== POR FARMACIA =====
 st.subheader(f"📊 Vendas por Farmacia ({periodo})")
 
 if not farmacias:
@@ -113,30 +140,20 @@ else:
             
             with col_b:
                 st.metric("Total", f"Kz {total:,.0f}".replace(",", "."))
-            
             with col_c:
                 st.metric("Vendas", f"{num_v}")
-            
             with col_d:
                 st.metric("Ticket Medio", f"Kz {ticket:,.0f}".replace(",", "."))
             
             if dados["formas"]:
-                st.caption("**Formas de pagamento:** " + " • ".join(
-                    [f"{forma}: **{qtd}**" for forma, qtd in dados["formas"].items()]
-                ))
-            
-            if dados["vendedores"]:
-                st.caption("**Vendedores:** " + " • ".join(
-                    [f"{v}: **{q}**" for v, q in dados["vendedores"].items()]
+                st.caption("**Formas:** " + " • ".join(
+                    [f"{k}: **{v}**" for k, v in dados["formas"].items()]
                 ))
 
 st.markdown("---")
-
-# ===== EVOLUCAO =====
 st.subheader(f"📈 Evolucao ({periodo})")
 
 vendas_periodo = carregar_vendas_dia(dias)
-
 if vendas_periodo:
     st.bar_chart(
         {k: v["total"] for k, v in vendas_periodo.items()},
@@ -144,4 +161,4 @@ if vendas_periodo:
         use_container_width=True,
     )
 else:
-    st.info("Sem dados suficientes para o grafico.")
+    st.info("Sem dados suficientes.")
