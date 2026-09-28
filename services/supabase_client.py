@@ -1,8 +1,21 @@
+import os
 import requests
 from datetime import datetime, timedelta
 
-SUPABASE_URL = "https://bkbeedknuunjpuvbpgxr.supabase.co"
-SUPABASE_KEY = "sb_publishable_KXK6NeMtIy1m4jFk7jDprw_9rHnD-WT"
+# Tentar ler das Secrets do Streamlit primeiro
+try:
+    import streamlit as st
+    SUPABASE_URL = st.secrets.get("SUPABASE_URL", "")
+    SUPABASE_KEY = st.secrets.get("SUPABASE_KEY", "")
+except Exception:
+    SUPABASE_URL = ""
+    SUPABASE_KEY = ""
+
+# Fallback (para testes locais)
+if not SUPABASE_URL:
+    SUPABASE_URL = "https://bkbeedknuunjpuvbpgxr.supabase.co"
+if not SUPABASE_KEY:
+    SUPABASE_KEY = "sb_publishable_KXK6NeMtIy1m4jFk7jDprw_9rHnD-WT"
 
 HEADERS = {
     "apikey": SUPABASE_KEY,
