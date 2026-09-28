@@ -4,10 +4,12 @@ from services.supabase_client import (
     listar_farmacias, resumo_por_farmacia, vendas_por_dia
 )
 from services.auth import autenticar
+from pages_admin import mostrar_admin
+from pages_registo import mostrar_registo
 
 
 # ============================================================
-# CONFIGURACAO (primeira instrucao Streamlit)
+# CONFIGURACAO
 # ============================================================
 
 st.set_page_config(
@@ -88,7 +90,7 @@ def mostrar_login():
 
 
 # ============================================================
-# FUNCAO DO DASHBOARD
+# CACHE
 # ============================================================
 
 @st.cache_data(ttl=300)
@@ -106,29 +108,16 @@ def carregar_vendas_dia(dias):
     return vendas_por_dia(dias=dias)
 
 
+# ============================================================
+# DASHBOARD
+# ============================================================
+
 def mostrar_dashboard():
-    user = st.session_state["utilizador"]
-    
-    # ===== MENU LATERAL =====
-    with st.sidebar:
-        st.markdown(f"### 👤 {user['nome']}")
-        st.caption(f"📧 {user['email']}")
-        st.markdown("---")
-        
-        if st.button("🚪 Terminar Sessao", use_container_width=True):
-            st.session_state["logado"] = False
-            st.session_state["utilizador"] = None
-            st.rerun()
-        
-        st.markdown("---")
-        st.caption(f"🕐 {datetime.now().strftime('%d/%m/%Y %H:%M')}")
-    
-    # ===== CONTEUDO =====
     st.title("💊 JAM Soft — Monitorizacao")
     st.caption(f"Dados em tempo real • {datetime.now().strftime('%d/%m/%Y %H:%M')}")
+    
     st.markdown("---")
     
-    # Filtros
     col_f1, col_f2, col_f3 = st.columns([1, 1, 2])
     
     with col_f1:
@@ -221,10 +210,44 @@ def mostrar_dashboard():
 
 
 # ============================================================
-# ROUTER
+# ROUTER — VERIFICAR CONVITE OU LOGIN
+# ============================================================
+
+query_params = st.query_params
+token_convite = query_params.get("convite", None)
+
+if token_convite:
+    mostrar_registo(token_convite)
+    st.stop()
+
+
+# ============================================================
+# MENU PRINCIPAL
 # ============================================================
 
 if st.session_state["logado"]:
-    mostrar_dashboard()
+    user = st.session_state["utilizador"]
+    
+    with st.sidebar:
+        st.markdown(f"### 👤 {user['nome']}")
+        st.caption(f"📧 {user['email']}")
+        st.markdown("---")
+        
+        pagina = st.radio(
+            "Navegacao",
+            ["🏠 Dashboard", "⚙️ Administracao"],
+            label_visibility="collapsed",
+        )
+        
+        st.markdown("---")
+        if st.button("🚪 Terminar Sessao", use_container_width=True):
+            st.session_state["logado"] = False
+            st.session_state["utilizador"] = None
+            st.rerun()
+    
+    if pagina == "⚙️ Administracao":
+        mostrar_admin(user)
+    else:
+        mostrar_dashboard()
 else:
     mostrar_login()
