@@ -10,6 +10,7 @@ sys.path.insert(0, os.path.dirname(__file__))
 import requests
 from services.auth import gerar_hash, obter_utilizador_por_email
 from services.supabase_client import SUPABASE_URL, SUPABASE_KEY
+from config_cloud import CLOUD_ACCESS_ENABLED
 
 HEADERS = {
     "apikey": SUPABASE_KEY,
@@ -19,6 +20,9 @@ HEADERS = {
 
 
 def main():
+    if not CLOUD_ACCESS_ENABLED:
+        print("A plataforma online está temporariamente desligada por segurança.")
+        return
     email = input("Email: ").strip().lower()
     user = obter_utilizador_por_email(email)
     if not user:

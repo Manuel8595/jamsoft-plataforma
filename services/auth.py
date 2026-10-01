@@ -8,6 +8,7 @@ import secrets
 from datetime import datetime, timedelta
 
 from services.supabase_client import SUPABASE_URL, SUPABASE_KEY
+from config_cloud import CLOUD_ACCESS_ENABLED
 
 HEADERS = {
     "apikey": SUPABASE_KEY,
@@ -42,6 +43,8 @@ def verificar_senha(senha, hash_guardado):
 # ============================================================
 
 def obter_utilizador_por_email(email):
+    if not CLOUD_ACCESS_ENABLED:
+        return None
     url = f"{SUPABASE_URL}/rest/v1/plataforma_utilizadores"
     params = {"email": f"eq.{email}", "select": "*", "limit": "1"}
     r = requests.get(url, headers=HEADERS, params=params, timeout=10)
@@ -51,6 +54,8 @@ def obter_utilizador_por_email(email):
 
 
 def listar_utilizadores():
+    if not CLOUD_ACCESS_ENABLED:
+        return []
     url = f"{SUPABASE_URL}/rest/v1/plataforma_utilizadores"
     params = {"select": "*", "order": "id"}
     r = requests.get(url, headers=HEADERS, params=params, timeout=10)
@@ -60,6 +65,8 @@ def listar_utilizadores():
 
 
 def registar_utilizador(email, senha, nome):
+    if not CLOUD_ACCESS_ENABLED:
+        return False
     senha_hash = gerar_hash(senha)
     url = f"{SUPABASE_URL}/rest/v1/plataforma_utilizadores"
     dados = {
@@ -75,29 +82,43 @@ def registar_utilizador(email, senha, nome):
 
 
 def autenticar(email, senha):
-    user = obter_utilizador_por_email(email)
-    if not user:
+    if not CLOUD_ACCESS_ENABLED:
+        return False, {"erro": "nuvem_desactivada"}
+
+    url = f"{SUPABASE_URL}/auth/v1/token?grant_type=password"
+    headers_auth = {
+        "apikey": SUPABASE_KEY,
+        "Content-Type": "application/json",
+    }
+    dados = {"email": email, "password": senha}
+
+    try:
+        r = requests.post(url, headers=headers_auth, json=dados, timeout=10)
+    except Exception:
+        return False, {"erro": "sem_ligacao"}
+
+    if r.status_code != 200:
         return False, None
-    
-    if not user.get("ativo"):
-        return False, {"erro": "inativo"}
-    
-    if not verificar_senha(senha, user.get("senha_hash", "")):
+
+    resposta = r.json()
+    token = resposta.get("access_token", "")
+    user = resposta.get("user", {})
+
+    if not token:
         return False, None
-    
-    url = f"{SUPABASE_URL}/rest/v1/plataforma_utilizadores?id=eq.{user['id']}"
-    dados = {"ultimo_login": datetime.now().isoformat()}
-    requests.patch(url, headers=HEADERS, json=dados, timeout=10)
-    
+
     return True, {
-        "id": user["id"],
-        "email": user["email"],
-        "nome": user["nome"],
-        "perfil": user.get("perfil", "ceo"),
+        "id": user.get("id", ""),
+        "email": user.get("email", email),
+        "nome": user.get("user_metadata", {}).get("nome", email),
+        "perfil": "ceo",
+        "jwt": token,
     }
 
 
 def alterar_senha(user_id, senha_antiga, senha_nova):
+    if not CLOUD_ACCESS_ENABLED:
+        return False, "A plataforma está temporariamente desactivada por segurança."
     user = None
     for u in listar_utilizadores():
         if u["id"] == user_id:
@@ -126,6 +147,8 @@ def gerar_token():
 
 
 def criar_convite(email, nome_sugerido=""):
+    if not CLOUD_ACCESS_ENABLED:
+        return None
     token = gerar_token()
     expira = (datetime.now() + timedelta(days=7)).isoformat()
     
@@ -144,6 +167,8 @@ def criar_convite(email, nome_sugerido=""):
 
 
 def listar_convites():
+    if not CLOUD_ACCESS_ENABLED:
+        return []
     url = f"{SUPABASE_URL}/rest/v1/plataforma_convites"
     params = {"select": "*", "order": "id.desc"}
     r = requests.get(url, headers=HEADERS, params=params, timeout=10)
@@ -153,6 +178,8 @@ def listar_convites():
 
 
 def obter_convite_por_token(token):
+    if not CLOUD_ACCESS_ENABLED:
+        return None
     url = f"{SUPABASE_URL}/rest/v1/plataforma_convites"
     params = {"token": f"eq.{token}", "select": "*", "limit": "1"}
     r = requests.get(url, headers=HEADERS, params=params, timeout=10)
@@ -162,6 +189,8 @@ def obter_convite_por_token(token):
 
 
 def marcar_convite_usado(convite_id):
+    if not CLOUD_ACCESS_ENABLED:
+        return False
     url = f"{SUPABASE_URL}/rest/v1/plataforma_convites?id=eq.{convite_id}"
     requests.patch(url, headers=HEADERS, json={"usado": True}, timeout=10)
 
