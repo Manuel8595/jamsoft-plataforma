@@ -1,6 +1,7 @@
 import streamlit as st
 from config_cloud import CLOUD_ACCESS_ENABLED
 from services.auth import autenticar
+from services.supabase_client import definir_jwt, limpar_jwt
 from pages_admin import mostrar_admin
 from pages_registo import mostrar_registo
 from dashboard import mostrar_dashboard
@@ -73,6 +74,7 @@ def mostrar_login():
                 if ok:
                     st.session_state["logado"] = True
                     st.session_state["utilizador"] = dados
+                    definir_jwt(dados.get("jwt", ""))
                     st.rerun()
                 else:
                     if dados and dados.get("erro") == "inativo":
@@ -81,7 +83,7 @@ def mostrar_login():
                         st.error("Email ou senha incorrectos.")
 
         st.markdown("---")
-        st.caption("🔒 Acesso restrito. Cada CEO tem a sua conta propria.")
+        st.caption("🔒 Acesso restrito.")
 
 
 query_params = st.query_params
@@ -124,6 +126,7 @@ if st.session_state["logado"]:
 
         st.markdown("---")
         if st.button("🚪 Terminar Sessao", use_container_width=True):
+            limpar_jwt()
             st.session_state["logado"] = False
             st.session_state["utilizador"] = None
             st.session_state["pagina"] = "📊 Resumo do Pais"
