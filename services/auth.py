@@ -75,25 +75,34 @@ def registar_utilizador(email, senha, nome):
 
 
 def autenticar(email, senha):
-    user = obter_utilizador_por_email(email)
-    if not user:
+    url = f"{SUPABASE_URL}/auth/v1/token?grant_type=password"
+    headers_auth = {
+        "apikey": SUPABASE_KEY,
+        "Content-Type": "application/json",
+    }
+    dados = {"email": email, "password": senha}
+
+    try:
+        r = requests.post(url, headers=headers_auth, json=dados, timeout=10)
+    except Exception:
+        return False, {"erro": "sem_ligacao"}
+
+    if r.status_code != 200:
         return False, None
-    
-    if not user.get("ativo"):
-        return False, {"erro": "inativo"}
-    
-    if not verificar_senha(senha, user.get("senha_hash", "")):
+
+    resposta = r.json()
+    token = resposta.get("access_token", "")
+    user = resposta.get("user", {})
+
+    if not token:
         return False, None
-    
-    url = f"{SUPABASE_URL}/rest/v1/plataforma_utilizadores?id=eq.{user['id']}"
-    dados = {"ultimo_login": datetime.now().isoformat()}
-    requests.patch(url, headers=HEADERS, json=dados, timeout=10)
-    
+
     return True, {
-        "id": user["id"],
-        "email": user["email"],
-        "nome": user["nome"],
-        "perfil": user.get("perfil", "ceo"),
+        "id": user.get("id", ""),
+        "email": user.get("email", email),
+        "nome": user.get("user_metadata", {}).get("nome", email),
+        "perfil": "ceo",
+        "jwt": token,
     }
 
 
@@ -103,17 +112,17 @@ def alterar_senha(user_id, senha_antiga, senha_nova):
         if u["id"] == user_id:
             user = u
             break
-    
+
     if not user:
         return False, "Utilizador nao encontrado"
-    
+
     if not verificar_senha(senha_antiga, user.get("senha_hash", "")):
         return False, "Senha actual incorrecta"
-    
+
     novo_hash = gerar_hash(senha_nova)
     url = f"{SUPABASE_URL}/rest/v1/plataforma_utilizadores?id=eq.{user_id}"
     requests.patch(url, headers=HEADERS, json={"senha_hash": novo_hash}, timeout=10)
-    
+
     return True, "Senha alterada com sucesso"
 
 
@@ -128,7 +137,7 @@ def gerar_token():
 def criar_convite(email, nome_sugerido=""):
     token = gerar_token()
     expira = (datetime.now() + timedelta(days=7)).isoformat()
-    
+
     url = f"{SUPABASE_URL}/rest/v1/plataforma_convites"
     dados = {
         "email": email,
@@ -136,7 +145,7 @@ def criar_convite(email, nome_sugerido=""):
         "nome_sugerido": nome_sugerido,
         "expira_em": expira,
     }
-    
+
     r = requests.post(url, headers=HEADERS, json=dados, timeout=10)
     if r.status_code in (200, 201):
         return token
@@ -170,15 +179,15 @@ def convite_valido(token):
     conv = obter_convite_por_token(token)
     if not conv:
         return False, "Convite nao encontrado"
-    
+
     if conv.get("usado"):
         return False, "Este convite ja foi utilizado"
-    
+
     try:
         expira = datetime.fromisoformat(conv["expira_em"].replace("Z", "+00:00"))
         if datetime.now(expira.tzinfo) > expira:
             return False, "Este convite expirou"
     except Exception:
         pass
-    
+
     return True, conv
