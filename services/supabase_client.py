@@ -322,3 +322,396 @@ def tem_meta_definida(mes, ano, jwt=None):
 def total_vendas_por_mes(mes, ano, jwt=None):
     vendas = vendas_por_mes(mes, ano, jwt=jwt)
     return sum(v.get("total", 0) or 0 for v in vendas)
+
+
+
+# ============================================================
+# FUNCOES VENDAS DETALHADAS
+# ============================================================
+
+def vendas_detalhadas_mes(mes, ano, farmacia_id=None, jwt=None):
+    inicio, fim = _intervalo_mes(mes, ano)
+    params = {
+        "select": "id,total,data,forma_pagamento,farmacia_id,utilizador_nome",
+        "data": [f"gte.{inicio}", f"lt.{fim}"],
+        "order": "data.asc",
+    }
+    if farmacia_id:
+        params["farmacia_id"] = f"eq.{farmacia_id}"
+    return _get_paginado("vendas", params, jwt=jwt) or []
+
+
+def vendas_por_forma_pagamento(mes, ano, farmacia_id=None, jwt=None):
+    vendas = vendas_detalhadas_mes(mes, ano, farmacia_id, jwt=jwt)
+    formas = {}
+    for v in vendas:
+        f = v.get("forma_pagamento") or "Nao especificado"
+        if f not in formas:
+            formas[f] = {"total": 0, "num": 0}
+        formas[f]["total"] += v.get("total", 0) or 0
+        formas[f]["num"] += 1
+    return formas
+
+
+def vendas_por_dia_mes(mes, ano, farmacia_id=None, jwt=None):
+    vendas = vendas_detalhadas_mes(mes, ano, farmacia_id, jwt=jwt)
+    por_dia = {}
+    for v in vendas:
+        d = v.get("data", "")[:10]
+        if not d:
+            continue
+        if d not in por_dia:
+            por_dia[d] = {"total": 0, "num": 0}
+        por_dia[d]["total"] += v.get("total", 0) or 0
+        por_dia[d]["num"] += 1
+    return dict(sorted(por_dia.items()))
+
+
+def vendas_por_hora_mes(mes, ano, farmacia_id=None, jwt=None):
+    vendas = vendas_detalhadas_mes(mes, ano, farmacia_id, jwt=jwt)
+    por_hora = {h: {"total": 0, "num": 0} for h in range(24)}
+    for v in vendas:
+        d = v.get("data", "")
+        if "T" not in d and " " not in d:
+            continue
+        try:
+            h = int(d[11:13])
+            por_hora[h]["total"] += v.get("total", 0) or 0
+            por_hora[h]["num"] += 1
+        except Exception:
+            continue
+    return por_hora
+
+
+def top_produtos_mes(mes, ano, limite=10, farmacia_id=None, jwt=None):
+    vendas = vendas_detalhadas_mes(mes, ano, farmacia_id, jwt=jwt)
+    venda_ids = [v["id"] for v in vendas]
+    if not venda_ids:
+        return []
+    params = {
+        "select": "produto_nome,quantidade,preco_unitario,subtotal,venda_id_origem,farmacia_id",
+        "order": "id.asc",
+        "limit": 5000,
+    }
+    if farmacia_id:
+        params["farmacia_id"] = f"eq.{farmacia_id}"
+    itens = _get_paginado("itens_venda", params, jwt=jwt) or []
+    itens_mes = [i for i in itens if i.get("venda_id_origem") in venda_ids]
+    produtos = {}
+    for it in itens_mes:
+        nome = it.get("produto_nome") or "Desconhecido"
+        qtd = it.get("quantidade") or 0
+        sub = it.get("subtotal") or 0
+        if nome not in produtos:
+            produtos[nome] = {"quantidade": 0, "total": 0}
+        produtos[nome]["quantidade"] += qtd
+        produtos[nome]["total"] += sub
+    lista = [{"nome": k, **v} for k, v in produtos.items()]
+    lista.sort(key=lambda x: x["quantidade"], reverse=True)
+    return lista[:limite]
+
+
+def top_clientes_mes(mes, ano, limite=10, jwt=None):
+    inicio, fim = _intervalo_mes(mes, ano)
+    params = {
+        "select": "cliente_nome,total,data",
+        "data": [f"gte.{inicio}", f"lt.{fim}"],
+        "order": "data.asc",
+    }
+    facturas = _get_paginado("facturas", params, jwt=jwt) or []
+    clientes = {}
+    for f in facturas:
+        nome = f.get("cliente_nome") or "Sem nome"
+        total = f.get("total") or 0
+        if nome not in clientes:
+            clientes[nome] = {"compras": 0, "total": 0}
+        clientes[nome]["compras"] += 1
+        clientes[nome]["total"] += total
+    lista = [{"nome": k, **v} for k, v in clientes.items()]
+    lista.sort(key=lambda x: x["total"], reverse=True)
+    return lista[:limite]
+
+
+# ============================================================
+# FUNCOES STOCK E PERDAS
+# ============================================================
+
+def listar_produtos_stock(farmacia_id=None, jwt=None):
+    params = {
+        "select": "id,nome,codigo_barras,principio_ativo,laboratorio,preco_custo,preco_venda,estoque_atual,estoque_minimo,categoria_nome,fornecedor_nome,farmacia_id",
+        "order": "nome.asc",
+        "limit": 5000,
+    }
+    if farmacia_id:
+        params["farmacia_id"] = f"eq.{farmacia_id}"
+    return _get_paginado("produtos", params, jwt=jwt) or []
+
+
+def listar_lotes(farmacia_id=None, jwt=None):
+    params = {
+        "select": "produto_nome,codigo_barras,numero_lote,data_validade,quantidade,farmacia_id",
+        "order": "data_validade.asc",
+        "limit": 5000,
+    }
+    if farmacia_id:
+        params["farmacia_id"] = f"eq.{farmacia_id}"
+    return _get_paginado("lotes", params, jwt=jwt) or []
+
+
+def lotes_a_vencer(dias=90, farmacia_id=None, jwt=None):
+    lotes = listar_lotes(farmacia_id, jwt=jwt)
+    hoje = datetime.now().date()
+    limite = hoje + timedelta(days=dias)
+    resultado = []
+    for l in lotes:
+        dv_str = l.get("data_validade")
+        if not dv_str:
+            continue
+        try:
+            dv = datetime.strptime(dv_str[:10], "%Y-%m-%d").date()
+            if dv <= limite:
+                resultado.append({**l, "dias_restantes": (dv - hoje).days})
+        except Exception:
+            continue
+    resultado.sort(key=lambda x: x.get("dias_restantes", 9999))
+    return resultado
+
+
+def resumo_stock(farmacia_id=None, jwt=None):
+    produtos = listar_produtos_stock(farmacia_id, jwt=jwt)
+    total_produtos = len(produtos)
+    total_unidades = sum(p.get("estoque_atual") or 0 for p in produtos)
+    valor_custo = sum((p.get("estoque_atual") or 0) * (p.get("preco_custo") or 0) for p in produtos)
+    valor_venda = sum((p.get("estoque_atual") or 0) * (p.get("preco_venda") or 0) for p in produtos)
+    estoque_baixo = len([p for p in produtos if (p.get("estoque_atual") or 0) <= (p.get("estoque_minimo") or 0)])
+    return {
+        "total_produtos": total_produtos,
+        "total_unidades": total_unidades,
+        "valor_custo": valor_custo,
+        "valor_venda": valor_venda,
+        "margem_potencial": valor_venda - valor_custo,
+        "estoque_baixo": estoque_baixo,
+    }
+
+
+def listar_perdas(mes=None, ano=None, farmacia_id=None, jwt=None):
+    if not mes:
+        mes = datetime.now().month
+    if not ano:
+        ano = datetime.now().year
+    inicio, fim = _intervalo_mes(mes, ano)
+    params = {
+        "select": "id,data,tipo,produto_nome,quantidade,valor_perdido,motivo,utilizador_nome,farmacia_id",
+        "data": [f"gte.{inicio}", f"lt.{fim}"],
+        "order": "data.desc",
+        "limit": 2000,
+    }
+    if farmacia_id:
+        params["farmacia_id"] = f"eq.{farmacia_id}"
+    return _get_paginado("perdas", params, jwt=jwt) or []
+
+
+def resumo_perdas(mes=None, ano=None, farmacia_id=None, jwt=None):
+    perdas = listar_perdas(mes, ano, farmacia_id, jwt=jwt)
+    por_tipo = {}
+    total_valor = 0
+    for p in perdas:
+        tipo = p.get("tipo") or "Outro"
+        valor = p.get("valor_perdido") or 0
+        if tipo not in por_tipo:
+            por_tipo[tipo] = {"total": 0, "num": 0}
+        por_tipo[tipo]["total"] += valor
+        por_tipo[tipo]["num"] += 1
+        total_valor += valor
+    return {"total_valor": total_valor, "total_num": len(perdas), "por_tipo": por_tipo}
+
+
+# ============================================================
+# FUNCOES FINANCEIRO E UTILIZADORES
+# ============================================================
+
+def listar_turnos_periodo(mes=None, ano=None, farmacia_id=None, jwt=None):
+    if not mes:
+        mes = datetime.now().month
+    if not ano:
+        ano = datetime.now().year
+    inicio, fim = _intervalo_mes(mes, ano)
+    params = {
+        "select": "id,caixa_id,data_abertura,data_fecho,utilizador_nome,valor_inicial,total_vendas,total_dinheiro,total_tpa,total_contado,total_sistema,diferenca,estado,farmacia_id",
+        "data_abertura": [f"gte.{inicio}", f"lt.{fim}"],
+        "order": "data_abertura.desc",
+        "limit": 500,
+    }
+    if farmacia_id:
+        params["farmacia_id"] = f"eq.{farmacia_id}"
+    return _get_paginado("turnos_caixa", params, jwt=jwt) or []
+
+
+def resumo_turnos(mes=None, ano=None, farmacia_id=None, jwt=None):
+    turnos = listar_turnos_periodo(mes, ano, farmacia_id, jwt=jwt)
+    fechados = [t for t in turnos if t.get("estado") == "FECHADO"]
+    total_vendas = sum(t.get("total_vendas") or 0 for t in fechados)
+    total_dinheiro = sum(t.get("total_dinheiro") or 0 for t in fechados)
+    total_tpa = sum(t.get("total_tpa") or 0 for t in fechados)
+    total_diferenca = sum(t.get("diferenca") or 0 for t in fechados)
+    total_faltas = sum(abs(t.get("diferenca") or 0) for t in fechados if (t.get("diferenca") or 0) < 0)
+    total_sobras = sum(t.get("diferenca") or 0 for t in fechados if (t.get("diferenca") or 0) > 0)
+    return {
+        "num_turnos": len(turnos),
+        "num_fechados": len(fechados),
+        "total_vendas": total_vendas,
+        "total_dinheiro": total_dinheiro,
+        "total_tpa": total_tpa,
+        "total_diferenca": total_diferenca,
+        "total_faltas": total_faltas,
+        "total_sobras": total_sobras,
+    }
+
+
+def listar_depositos(mes=None, ano=None, farmacia_id=None, jwt=None):
+    if not mes:
+        mes = datetime.now().month
+    if not ano:
+        ano = datetime.now().year
+    inicio = f"{ano}-{mes:02d}-01"
+    if mes == 12:
+        prox = f"{ano + 1}-01-01"
+    else:
+        prox = f"{ano}-{mes + 1:02d}-01"
+    params = {
+        "select": "*",
+        "data": [f"gte.{inicio}", f"lt.{prox}"],
+        "order": "data.desc",
+        "limit": 500,
+    }
+    if farmacia_id:
+        params["farmacia_id"] = f"eq.{farmacia_id}"
+    return _get_paginado("depositos", params, jwt=jwt) or []
+
+
+def resumo_depositos(mes=None, ano=None, farmacia_id=None, jwt=None):
+    depos = listar_depositos(mes, ano, farmacia_id, jwt=jwt)
+    total = sum(d.get("valor") or 0 for d in depos)
+    pendentes = [d for d in depos if d.get("estado") == "PENDENTE_APROVACAO"]
+    aprovados = [d for d in depos if d.get("estado") == "APROVADO"]
+    registados = [d for d in depos if d.get("estado") == "REGISTADO"]
+    return {
+        "num_total": len(depos),
+        "total_valor": total,
+        "num_pendentes": len(pendentes),
+        "num_aprovados": len(aprovados),
+        "num_registados": len(registados),
+    }
+
+
+def listar_todos_utilizadores(farmacia_id=None, jwt=None):
+    params = {
+        "select": "id,nome,username,perfil,ativo,criado_em,ultimo_login,farmacia_id",
+        "order": "nome.asc",
+        "limit": 500,
+    }
+    if farmacia_id:
+        params["farmacia_id"] = f"eq.{farmacia_id}"
+    return _get_paginado("utilizadores", params, jwt=jwt) or []
+
+
+def resumo_utilizadores(farmacia_id=None, jwt=None):
+    users = listar_todos_utilizadores(farmacia_id, jwt=jwt)
+    activos = [u for u in users if u.get("ativo")]
+    perfis = {}
+    for u in users:
+        p = u.get("perfil") or "desconhecido"
+        perfis[p] = perfis.get(p, 0) + 1
+    return {
+        "total": len(users),
+        "activos": len(activos),
+        "inactivos": len(users) - len(activos),
+        "perfis": perfis,
+    }
+
+
+def top_vendedores_mes(mes=None, ano=None, farmacia_id=None, limite=10, jwt=None):
+    if not mes:
+        mes = datetime.now().month
+    if not ano:
+        ano = datetime.now().year
+    inicio, fim = _intervalo_mes(mes, ano)
+    params = {
+        "select": "utilizador_nome,total,data",
+        "data": [f"gte.{inicio}", f"lt.{fim}"],
+        "order": "data.asc",
+        "limit": 5000,
+    }
+    if farmacia_id:
+        params["farmacia_id"] = f"eq.{farmacia_id}"
+    vendas = _get_paginado("vendas", params, jwt=jwt) or []
+    vendedores = {}
+    for v in vendas:
+        nome = v.get("utilizador_nome") or "Desconhecido"
+        total = v.get("total") or 0
+        if nome not in vendedores:
+            vendedores[nome] = {"num_vendas": 0, "total": 0}
+        vendedores[nome]["num_vendas"] += 1
+        vendedores[nome]["total"] += total
+    lista = [{"nome": k, **v} for k, v in vendedores.items()]
+    lista.sort(key=lambda x: x["total"], reverse=True)
+    return lista[:limite]
+
+
+# ============================================================
+# DIAGNOSTICO
+# ============================================================
+
+def diagnostico_sistema(jwt=None):
+    problemas = []
+    avisos = []
+    info = []
+    try:
+        farmacias = listar_farmacias(jwt=jwt)
+        if not farmacias:
+            problemas.append({
+                "area": "Base de dados",
+                "problema": "Nenhuma farmacia encontrada no Supabase",
+                "solucao": "Verificar se as farmacias foram criadas.",
+            })
+        else:
+            info.append(f"Supabase OK - {len(farmacias)} farmacias encontradas")
+    except Exception as e:
+        problemas.append({
+            "area": "Ligacao",
+            "problema": f"Erro ao ligar: {str(e)[:100]}",
+            "solucao": "Verificar internet e credenciais.",
+        })
+        return {"problemas": problemas, "avisos": avisos, "info": info, "tabelas": {}}
+
+    tabelas = {}
+    tabelas_check = [
+        ("farmacias", "Farmacias"),
+        ("vendas", "Vendas"),
+        ("produtos", "Produtos"),
+        ("lotes", "Lotes"),
+        ("turnos_caixa", "Turnos de Caixa"),
+        ("utilizadores", "Utilizadores"),
+        ("facturas", "Facturas"),
+    ]
+    for nome, label in tabelas_check:
+        try:
+            r = _get(nome, {"select": "id", "limit": 1}, jwt=jwt)
+            tabelas[label] = "OK" if r else "vazio"
+        except Exception:
+            tabelas[label] = "ERRO"
+
+    return {"problemas": problemas, "avisos": avisos, "info": info, "tabelas": tabelas}
+
+
+def info_plataforma():
+    return {
+        "versao": "1.0 - Segura",
+        "fases_concluidas": [
+            "Autenticacao Supabase Auth",
+            "RLS activo",
+            "Dados por farmacia",
+        ],
+        "supabase_url": SUPABASE_URL,
+        "data_servidor": datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
+    }
