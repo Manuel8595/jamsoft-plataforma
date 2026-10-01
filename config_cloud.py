@@ -1,22 +1,30 @@
-"""Configuração local e privada da sincronização Supabase.
-
-Os valores são lidos do ambiente ou do ficheiro .env ao lado da aplicação.
-"""
+"""Configuração local e privada da sincronização Supabase."""
 
 import os
 from pathlib import Path
+
+
+def _carregar_secrets_streamlit():
+    """Se estiver no Streamlit Cloud, lê dos Secrets."""
+    try:
+        import streamlit as st
+        for chave in ["SUPABASE_URL", "SUPABASE_PUBLISHABLE_KEY", "SUPABASE_KEY",
+                      "CLOUD_ACCESS_ENABLED", "SYNC_ENABLED"]:
+            valor = st.secrets.get(chave, None)
+            if valor is not None:
+                os.environ[chave] = str(valor)
+    except Exception:
+        pass
 
 
 def _carregar_env_local():
     caminho = Path(__file__).with_name(".env")
     if not caminho.is_file():
         return
-
     try:
         linhas = caminho.read_text(encoding="utf-8").splitlines()
     except OSError:
         return
-
     for linha in linhas:
         linha = linha.strip()
         if not linha or linha.startswith("#") or "=" not in linha:
@@ -28,15 +36,22 @@ def _carregar_env_local():
             os.environ[nome] = valor
 
 
+_carregar_secrets_streamlit()
 _carregar_env_local()
 
 SUPABASE_URL = os.environ.get("SUPABASE_URL", "").strip().rstrip("/")
-SUPABASE_PUBLISHABLE_KEY = os.environ.get("SUPABASE_PUBLISHABLE_KEY", "").strip()
+SUPABASE_PUBLISHABLE_KEY = (
+    os.environ.get("SUPABASE_PUBLISHABLE_KEY", "").strip()
+    or os.environ.get("SUPABASE_KEY", "").strip()
+)
+
 _VALORES_VERDADEIROS = {"1", "true", "yes", "sim"}
+
 CLOUD_ACCESS_ENABLED = (
     os.environ.get("CLOUD_ACCESS_ENABLED", "false").strip().lower()
     in _VALORES_VERDADEIROS
 )
+
 SYNC_ENABLED = (
     CLOUD_ACCESS_ENABLED
     and os.environ.get("SYNC_ENABLED", "false").strip().lower() in _VALORES_VERDADEIROS
