@@ -1,114 +1,162 @@
-"""
-Painel de admin — criar convites para novos CEOs.
-"""
-
 import streamlit as st
-from datetime import datetime
-from services.auth import criar_convite, listar_convites, listar_utilizadores
+from config_cloud import CLOUD_ACCESS_ENABLED
+from services.auth import autenticar
+from services.supabase_client import definir_jwt, limpar_jwt
+from pages_admin import mostrar_admin
+from pages_registo import mostrar_registo
+from dashboard import mostrar_dashboard
+from pages_secundarias import (
+    mostrar_ranking,
+    mostrar_alertas,
+    mostrar_orcamentos,
+    mostrar_vendas,
+    mostrar_stock,
+    mostrar_perdas,
+    mostrar_financeiro,
+    mostrar_utilizadores,
+    mostrar_diagnostico,
+    mostrar_definicoes,
+)
 
 
-def mostrar_admin(user):
-    st.title("⚙️ Administracao")
-    st.caption(f"Logado como: {user['nome']} ({user['email']})")
-    
-    st.markdown("---")
-    
-    tab1, tab2 = st.tabs(["📨 Convites", "👥 Utilizadores"])
-    
-    # ============================================================
-    # TAB 1 — CONVITES
-    # ============================================================
-    with tab1:
-        st.subheader("Criar Novo Convite")
-        st.caption("Cada CEO recebe um link proprio. So ele pode criar a sua senha.")
-        
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            email_novo = st.text_input(
-                "Email do novo CEO",
-                placeholder="ceo2@empresa.com",
-                key="email_novo",
-            )
-        
-        with col2:
-            nome_novo = st.text_input(
-                "Nome (opcional)",
-                placeholder="Joao Silva",
-                key="nome_novo",
-            )
-        
-        if st.button("📨 Gerar Link de Convite", type="primary"):
-            if not email_novo:
-                st.error("Preenche o email.")
-            elif not "@" in email_novo:
-                st.error("Email invalido.")
+st.set_page_config(
+    page_title="JAM Soft - Monitorizacao",
+    page_icon="💊",
+    layout="wide",
+    initial_sidebar_state="expanded",
+)
+
+if not CLOUD_ACCESS_ENABLED:
+    st.info(
+        "A plataforma online está temporariamente desligada. "
+        "A aplicação local da farmácia continua disponível."
+    )
+    st.stop()
+
+
+if "logado" not in st.session_state:
+    st.session_state["logado"] = False
+if "utilizador" not in st.session_state:
+    st.session_state["utilizador"] = None
+if "pagina" not in st.session_state:
+    st.session_state["pagina"] = "📊 Resumo do Pais"
+
+
+def mostrar_login():
+    st.markdown("""
+        <div style='text-align: center; padding: 20px;'>
+            <h1>💊 JAM Soft</h1>
+            <p style='color: #94a3b8;'>Plataforma de Monitorizacao</p>
+            <hr style='border-color: #334155;'>
+        </div>
+    """, unsafe_allow_html=True)
+
+    col1, col2, col3 = st.columns([1, 2, 1])
+
+    with col2:
+        st.subheader("🔐 Entrar")
+
+        with st.form("form_login"):
+            email = st.text_input("📧 Email", placeholder="o-teu-email@exemplo.com")
+            senha = st.text_input("🔑 Senha", type="password", placeholder="A tua senha")
+            submitted = st.form_submit_button("Entrar", use_container_width=True, type="primary")
+
+        if submitted:
+            if not email or not senha:
+                st.error("Preenche o email e a senha.")
             else:
-                # Verificar se ja existe utilizador
-                users = listar_utilizadores()
-                if any(u["email"].lower() == email_novo.lower() for u in users):
-                    st.error(f"Ja existe utilizador com email {email_novo}")
+                try:
+                    ok, dados = autenticar(email.strip().lower(), senha)
+                except Exception as e:
+                    st.error(f"Erro: {e}")
+                    ok, dados = False, None
+
+                if ok:
+                    st.session_state["logado"] = True
+                    st.session_state["utilizador"] = dados
+                    definir_jwt(dados.get("jwt", ""))
+                    st.rerun()
                 else:
-                    token = criar_convite(email_novo, nome_novo)
-                    if token:
-                        st.success("Convite criado!")
-                        st.markdown("**Link a enviar por WhatsApp/Email:**")
-                        
-                        # Link da plataforma
-                        link = f"https://jamsoft-plataforma-nthcjcruax7wmg9rqxr4qz.streamlit.app/?convite={token}"
-                        st.code(link, language=None)
-                        
-                        st.info("Copia este link e envia ao novo CEO. Ele tem 7 dias para se registar.")
+                    if dados and dados.get("erro") == "inativo":
+                        st.error("Conta inactiva. Contacta o administrador.")
                     else:
-                        st.error("Erro ao criar convite. Verifica se o email ja foi usado.")
-        
+                        st.error("Email ou senha incorrectos.")
+
         st.markdown("---")
-        st.subheader("Convites Existentes")
-        
-        try:
-            convites = listar_convites()
-        except Exception as e:
-            st.error(f"Erro ao listar: {e}")
-            convites = []
-        
-        if not convites:
-            st.info("Nenhum convite criado.")
-        else:
-            for c in convites:
-                status = "✅ Usado" if c.get("usado") else "🟡 Pendente"
-                with st.container(border=True):
-                    col_a, col_b = st.columns([3, 1])
-                    with col_a:
-                        st.markdown(f"**{c.get('email', '?')}** — {c.get('nome_sugerido', '—') or '—'}")
-                        st.caption(f"Criado em: {c.get('criado_em', '?')[:16]} | Expira: {c.get('expira_em', '?')[:16]}")
-                    with col_b:
-                        st.markdown(status)
-    
-    # ============================================================
-    # TAB 2 — UTILIZADORES
-    # ============================================================
-    with tab2:
-        st.subheader("Utilizadores da Plataforma")
-        
-        try:
-            users = listar_utilizadores()
-        except Exception as e:
-            st.error(f"Erro: {e}")
-            users = []
-        
-        if not users:
-            st.info("Nenhum utilizador registado.")
-        else:
-            for u in users:
-                status = "✅ Activo" if u.get("ativo") else "🚫 Inactivo"
-                ultimo = u.get("ultimo_login", "—")
-                if ultimo and ultimo != "—":
-                    ultimo = ultimo[:16]
-                
-                with st.container(border=True):
-                    col_a, col_b = st.columns([3, 1])
-                    with col_a:
-                        st.markdown(f"**{u.get('nome', '?')}** — {u.get('email', '?')}")
-                        st.caption(f"Ultimo login: {ultimo}")
-                    with col_b:
-                        st.markdown(status)
+        st.caption("🔒 Acesso restrito.")
+
+
+query_params = st.query_params
+token_convite = query_params.get("convite", None)
+
+if token_convite:
+    mostrar_registo(token_convite)
+    st.stop()
+
+
+if st.session_state["logado"]:
+    user = st.session_state["utilizador"]
+
+    with st.sidebar:
+        st.markdown(f"### 👤 {user['nome']}")
+        st.caption(f"📧 {user['email']}")
+        st.markdown("---")
+
+        menu = [
+            "📊 Resumo do Pais",
+            "🏆 Ranking de Farmacias",
+            "🔔 Alertas",
+            "💰 Orcamentos",
+            "📈 Vendas",
+            "📦 Stock",
+            "💸 Perdas",
+            "🏦 Financeiro",
+            "👥 Utilizadores",
+            "🩺 Diagnostico",
+            "⚙️ Definicoes",
+            "🔐 Administracao",
+        ]
+
+        pagina = st.radio(
+            "Navegacao",
+            menu,
+            index=menu.index(st.session_state["pagina"]),
+            label_visibility="collapsed",
+        )
+        st.session_state["pagina"] = pagina
+
+        st.markdown("---")
+        if st.button("🚪 Terminar Sessao", use_container_width=True):
+            limpar_jwt()
+            st.session_state["logado"] = False
+            st.session_state["utilizador"] = None
+            st.session_state["pagina"] = "📊 Resumo do Pais"
+            st.rerun()
+
+    if pagina == "📊 Resumo do Pais":
+        mostrar_dashboard()
+    elif pagina == "🏆 Ranking de Farmacias":
+        mostrar_ranking()
+    elif pagina == "🔔 Alertas":
+        mostrar_alertas()
+    elif pagina == "💰 Orcamentos":
+        mostrar_orcamentos()
+    elif pagina == "📈 Vendas":
+        mostrar_vendas()
+    elif pagina == "📦 Stock":
+        mostrar_stock()
+    elif pagina == "💸 Perdas":
+        mostrar_perdas()
+    elif pagina == "🏦 Financeiro":
+        mostrar_financeiro()
+    elif pagina == "👥 Utilizadores":
+        mostrar_utilizadores()
+    elif pagina == "🩺 Diagnostico":
+        mostrar_diagnostico()
+    elif pagina == "⚙️ Definicoes":
+        mostrar_definicoes()
+    elif pagina == "🔐 Administracao":
+        mostrar_admin(user)
+
+else:
+    mostrar_login()

@@ -18,7 +18,6 @@ from pages_secundarias import (
     mostrar_definicoes,
 )
 
-
 st.set_page_config(
     page_title="JAM Soft - Monitorizacao",
     page_icon="💊",
@@ -27,12 +26,8 @@ st.set_page_config(
 )
 
 if not CLOUD_ACCESS_ENABLED:
-    st.info(
-        "A plataforma online está temporariamente desligada. "
-        "A aplicação local da farmácia continua disponível."
-    )
+    st.info("A plataforma online está temporariamente desligada.")
     st.stop()
-
 
 if "logado" not in st.session_state:
     st.session_state["logado"] = False
@@ -57,8 +52,8 @@ def mostrar_login():
         st.subheader("🔐 Entrar")
 
         with st.form("form_login"):
-            email = st.text_input("📧 Email", placeholder="o-teu-email@exemplo.com")
-            senha = st.text_input("🔑 Senha", type="password", placeholder="A tua senha")
+            email = st.text_input("📧 Email")
+            senha = st.text_input("🔑 Senha", type="password")
             submitted = st.form_submit_button("Entrar", use_container_width=True, type="primary")
 
         if submitted:
@@ -77,13 +72,7 @@ def mostrar_login():
                     definir_jwt(dados.get("jwt", ""))
                     st.rerun()
                 else:
-                    if dados and dados.get("erro") == "inativo":
-                        st.error("Conta inactiva. Contacta o administrador.")
-                    else:
-                        st.error("Email ou senha incorrectos.")
-
-        st.markdown("---")
-        st.caption("🔒 Acesso restrito.")
+                    st.error("Email ou senha incorrectos.")
 
 
 query_params = st.query_params
@@ -114,6 +103,7 @@ if st.session_state["logado"]:
             "👥 Utilizadores",
             "🩺 Diagnostico",
             "⚙️ Definicoes",
+            "🔐 Administracao",
         ]
 
         pagina = st.radio(
@@ -154,6 +144,8 @@ if st.session_state["logado"]:
         mostrar_diagnostico()
     elif pagina == "⚙️ Definicoes":
         mostrar_definicoes()
+    elif pagina == "🔐 Administracao":
+        mostrar_admin(user)
 
 else:
     mostrar_login()
