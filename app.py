@@ -3,7 +3,7 @@ from config_cloud import CLOUD_ACCESS_ENABLED
 from services.auth import autenticar
 from pages_admin import mostrar_admin
 from pages_registo import mostrar_registo
-from dashboard import mostrar_dashboard
+from plataforma_web.dashboard import mostrar_dashboard
 from pages_secundarias import (
     mostrar_ranking,
     mostrar_alertas,
