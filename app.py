@@ -152,4 +152,3 @@ if st.session_state["logado"]:
 
 else:
     mostrar_login()
-    Actualizar app.py para Supabase Auth
