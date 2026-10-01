@@ -2,7 +2,6 @@ import streamlit as st
 from config_cloud import CLOUD_ACCESS_ENABLED
 from services.auth import autenticar
 from services.supabase_client import definir_jwt, limpar_jwt
-from pages_admin import mostrar_admin
 from pages_registo import mostrar_registo
 from dashboard import mostrar_dashboard
 from pages_secundarias import (
