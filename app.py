@@ -5,7 +5,7 @@ from services.supabase_client import definir_jwt, limpar_jwt
 from pages_admin import mostrar_admin
 from pages_config import mostrar_configuracao
 from pages_registo import mostrar_registo
-from plataforma_web.dashboard import mostrar_dashboard
+from dashboard import mostrar_dashboard
 from pages_secundarias import (
     mostrar_ranking,
     mostrar_alertas,
