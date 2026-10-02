@@ -1111,3 +1111,209 @@ def _fmt_kz_local(valor):
         return f"Kz {float(valor):,.0f}".replace(",", ".")
     except Exception:
         return "Kz 0"
+
+    
+
+# ============================================================
+# ============ RENTABILIDADE E SUGESTOES IA ==================
+# ============================================================
+
+def calcular_rentabilidade_farmacia(farmacia_id, ano):
+    """
+    Calcula rentabilidade de uma farmácia no ano + ciclos de 3 meses.
+    Retorna dict com: margem, lucro, custo, ticket, sugestões.
+    """
+    from datetime import datetime as _dt
+
+    resultado = {
+        "ano": ano,
+        "ciclos": {},          # {Q1: {...}, Q2: {...}, Q3: {...}, Q4: {...}}
+        "ano_total": {
+            "vendas": 0.0,
+            "custo": 0.0,
+            "lucro": 0.0,
+            "margem_pct": 0.0,
+            "num_vendas": 0,
+            "ticket_medio": 0.0,
+        },
+        "sugestoes": [],
+    }
+
+    # ─── 1. Vendas por mês ───
+    vendas_por_mes_cache = {}
+    for m in range(1, 13):
+        vendas_por_mes_cache[m] = vendas_por_mes(m, ano, farmacia_id)
+
+    # ─── 2. Calcular totais por ciclo (3 meses) ───
+    # Q1: Jan-Mar | Q2: Abr-Jun | Q3: Jul-Set | Q4: Out-Dez
+    ciclos = {
+        "Q1 (Jan-Mar)": [1, 2, 3],
+        "Q2 (Abr-Jun)": [4, 5, 6],
+        "Q3 (Jul-Set)": [7, 8, 9],
+        "Q4 (Out-Dez)": [10, 11, 12],
+    }
+
+    total_ano_vendas = 0
+    total_ano_custo = 0
+    total_ano_num = 0
+
+    for nome_ciclo, meses in ciclos.items():
+        total_ciclo_vendas = 0
+        total_ciclo_num = 0
+        total_ciclo_custo = 0
+
+        for m in meses:
+            vendas_m = vendas_por_mes_cache[m]
+            vendas_m_total = sum(v.get("total", 0) or 0 for v in vendas_m)
+            total_ciclo_vendas += vendas_m_total
+            total_ciclo_num += len(vendas_m)
+
+            # Calcular custo dos produtos vendidos no mês
+            for v in vendas_m:
+                custo_venda = _calcular_custo_venda(v.get("id"))
+                total_ciclo_custo += custo_venda
+
+        lucro_ciclo = total_ciclo_vendas - total_ciclo_custo
+        margem_ciclo = (lucro_ciclo / total_ciclo_vendas * 100) if total_ciclo_vendas > 0 else 0
+        ticket_ciclo = (total_ciclo_vendas / total_ciclo_num) if total_ciclo_num > 0 else 0
+
+        resultado["ciclos"][nome_ciclo] = {
+            "vendas": round(total_ciclo_vendas, 2),
+            "custo": round(total_ciclo_custo, 2),
+            "lucro": round(lucro_ciclo, 2),
+            "margem_pct": round(margem_ciclo, 2),
+            "num_vendas": total_ciclo_num,
+            "ticket_medio": round(ticket_ciclo, 2),
+        }
+
+        total_ano_vendas += total_ciclo_vendas
+        total_ano_custo += total_ciclo_custo
+        total_ano_num += total_ciclo_num
+
+    lucro_ano = total_ano_vendas - total_ano_custo
+    margem_ano = (lucro_ano / total_ano_vendas * 100) if total_ano_vendas > 0 else 0
+    ticket_ano = (total_ano_vendas / total_ano_num) if total_ano_num > 0 else 0
+
+    resultado["ano_total"] = {
+        "vendas": round(total_ano_vendas, 2),
+        "custo": round(total_ano_custo, 2),
+        "lucro": round(lucro_ano, 2),
+        "margem_pct": round(margem_ano, 2),
+        "num_vendas": total_ano_num,
+        "ticket_medio": round(ticket_ano, 2),
+    }
+
+    # ─── 3. Sugestões IA ───
+    sugestoes = []
+
+    # Margem baixa
+    if margem_ano < 20 and total_ano_vendas > 0:
+        sugestoes.append({
+            "nivel": "CRITICO",
+            "titulo": f"Margem muito baixa ({margem_ano:.1f}%)",
+            "detalhe": "Preços de venda podem estar demasiado baixos.",
+            "accao": "Rever preços ou negociar melhores condições com fornecedores.",
+        })
+    elif margem_ano < 30 and total_ano_vendas > 0:
+        sugestoes.append({
+            "nivel": "AVISO",
+            "titulo": f"Margem modesta ({margem_ano:.1f}%)",
+            "detalhe": "Margem abaixo do ideal (30%+).",
+            "accao": "Promover produtos com margem alta.",
+        })
+
+    # Ticket médio baixo
+    if 0 < ticket_ano < 300:
+        sugestoes.append({
+            "nivel": "AVISO",
+            "titulo": f"Ticket médio baixo ({_fmt_kz_local(ticket_ano)})",
+            "detalhe": "Clientes compram poucos produtos por venda.",
+            "accao": "Sugerir produtos complementares no PDV.",
+        })
+
+    # Ciclo em queda
+    ciclos_ord = ["Q1 (Jan-Mar)", "Q2 (Abr-Jun)", "Q3 (Jul-Set)", "Q4 (Out-Dez)"]
+    valores_ciclos = [resultado["ciclos"][c]["vendas"] for c in ciclos_ord]
+    valores_nao_zero = [v for v in valores_ciclos if v > 0]
+
+    if len(valores_nao_zero) >= 2:
+        if valores_nao_zero[-1] < valores_nao_zero[-2] * 0.8:
+            sugestoes.append({
+                "nivel": "CRITICO",
+                "titulo": "Vendas em queda no último ciclo",
+                "detalhe": f"Caiu de {_fmt_kz_local(valores_nao_zero[-2])} para {_fmt_kz_local(valores_nao_zero[-1])}",
+                "accao": "Investigar motivo — stock, preços, concorrência.",
+            })
+
+    # Stock crítico
+    try:
+        produtos = listar_produtos_stock(farmacia_id=farmacia_id)
+        sem_stock = [p for p in produtos if (p.get("estoque_atual") or 0) == 0]
+        if sem_stock:
+            sugestoes.append({
+                "nivel": "AVISO",
+                "titulo": f"{len(sem_stock)} produto(s) em falta",
+                "detalhe": f"Ex: {sem_stock[0].get('nome', '?')}",
+                "accao": "Encomendar ao fornecedor.",
+            })
+    except Exception:
+        pass
+
+    # Sem vendas
+    if total_ano_vendas == 0:
+        sugestoes.append({
+            "nivel": "INFO",
+            "titulo": "Sem vendas registadas este ano",
+            "detalhe": "Farmácia ainda não operou ou é de teste.",
+            "accao": "Verificar sincronização do PC.",
+        })
+
+    resultado["sugestoes"] = sugestoes
+
+    return resultado
+
+
+def _calcular_custo_venda(venda_id):
+    """Calcula o custo dos produtos vendidos numa venda."""
+    if not venda_id:
+        return 0.0
+
+    # Buscar itens da venda
+    itens = _get("itens_venda", {
+        "select": "produto_id,quantidade",
+        "venda_id": f"eq.{venda_id}",
+    }) or []
+
+    custo_total = 0.0
+    for it in itens:
+        pid = it.get("produto_id")
+        qtd = it.get("quantidade") or 0
+        if not pid:
+            continue
+
+        # Buscar preço de custo
+        prod = _get("produtos", {
+            "select": "preco_custo",
+            "id": f"eq.{pid}",
+            "limit": "1",
+        })
+        if prod:
+            preco_custo = prod[0].get("preco_custo") or 0
+            custo_total += preco_custo * qtd
+
+    return custo_total
+
+
+def calcular_rentabilidade_geral(ano):
+    """Calcula rentabilidade de todas as farmácias agregada."""
+    farmacias = listar_farmacias()
+    resultado = {}
+
+    for f in farmacias:
+        try:
+            resultado[f["id"]] = calcular_rentabilidade_farmacia(f["id"], ano)
+        except Exception as e:
+            print(f"[Rentabilidade] Erro em {f.get('nome')}: {e}")
+            resultado[f["id"]] = None
+
+    return resultado

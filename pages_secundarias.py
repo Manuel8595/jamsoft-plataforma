@@ -138,10 +138,97 @@ def mostrar_ranking():
         with row[5]: st.markdown(status)
         st.markdown("")
 
-    st.markdown("---")
-    st.subheader("Grafico")
+        st.markdown("---")
+    st.subheader("Grafico de Vendas")
     dados_grafico = {r["farmacia"]["nome"][:20]: r["total"] for r in ranking}
     st.bar_chart(dados_grafico, height=320, use_container_width=True)
+
+    # ============================================================
+    # RENTABILIDADE POR FARMACIA
+    # ============================================================
+    st.markdown("---")
+    st.subheader("📊 Rentabilidade e Sugestoes (IA)")
+    st.caption(
+        "A IA analisa margem, ticket medio, tendencia e stock. "
+        "Sugestoes sao actualizadas automaticamente."
+    )
+
+    with st.spinner("A carregar farmacias..."):
+        farmacias = listar_farmacias()
+
+
+    if st.button("🤖 Analisar rentabilidade", use_container_width=True, key="btn_rent"):
+        with st.spinner("A analisar..."):
+            from services.supabase_client import calcular_rentabilidade_farmacia
+            rentabilidades = {}
+            for f in farmacias:
+                rent = calcular_rentabilidade_farmacia(f["id"], ano_escolhido)
+                rentabilidades[f["id"]] = rent
+        st.session_state["rentabilidades"] = rentabilidades
+        st.session_state["rent_ano"] = ano_escolhido
+
+    # Mostrar se existir
+    if "rentabilidades" in st.session_state:
+        rent_data = st.session_state["rentabilidades"]
+        rent_ano = st.session_state.get("rent_ano")
+
+        if rent_ano == ano_escolhido:
+            for f in farmacias:
+                rent = rent_data.get(f["id"])
+                if not rent:
+                    continue
+
+                st.markdown("")
+                with st.container(border=True):
+                    st.markdown(f"### {f['nome']}")
+
+                    # Totais do ano
+                    ano_tot = rent.get("ano_total", {})
+                    c1, c2, c3, c4 = st.columns(4)
+                    with c1:
+                        st.metric("Vendas (ano)", _fmt_kz(ano_tot.get("vendas", 0)))
+                    with c2:
+                        st.metric("Custo (ano)", _fmt_kz(ano_tot.get("custo", 0)))
+                    with c3:
+                        st.metric("Lucro (ano)", _fmt_kz(ano_tot.get("lucro", 0)))
+                    with c4:
+                        margem = ano_tot.get("margem_pct", 0)
+                        if margem >= 30:
+                            st.metric("Margem", f"🟢 {margem:.1f}%")
+                        elif margem >= 20:
+                            st.metric("Margem", f"🟡 {margem:.1f}%")
+                        else:
+                            st.metric("Margem", f"🔴 {margem:.1f}%")
+
+                    # Ciclos (3 em 3 meses)
+                    st.markdown("**Por ciclo (3 meses):**")
+                    ciclos = rent.get("ciclos", {})
+                    if ciclos:
+                        cols_cic = st.columns(len(ciclos))
+                        for idx, (nome_ciclo, dados_cic) in enumerate(ciclos.items()):
+                            with cols_cic[idx]:
+                                st.markdown(f"_{nome_ciclo}_")
+                                st.markdown(f"**{_fmt_kz(dados_cic.get('vendas', 0))}**")
+                                st.caption(
+                                    f"Lucro: {_fmt_kz(dados_cic.get('lucro', 0))} | "
+                                    f"Margem: {dados_cic.get('margem_pct', 0):.0f}%"
+                                )
+
+                    # Sugestoes da IA
+                    sugestoes = rent.get("sugestoes", [])
+                    if sugestoes:
+                        st.markdown("**🤖 Sugestoes da IA:**")
+                        for s in sugestoes:
+                            nivel = s.get("nivel", "INFO")
+                            msg = f"**{s.get('titulo', '?')}** — {s.get('detalhe', '')} 💡 {s.get('accao', '')}"
+                            if nivel == "CRITICO":
+                                st.error(msg)
+                            elif nivel == "AVISO":
+                                st.warning(msg)
+                            else:
+                                st.info(msg)
+                    else:
+                        st.success("✅ Sem sugestoes — desempenho saudavel.")
 
 
 def mostrar_alertas():
