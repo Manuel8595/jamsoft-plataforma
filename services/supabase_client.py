@@ -1317,3 +1317,97 @@ def calcular_rentabilidade_geral(ano):
             resultado[f["id"]] = None
 
     return resultado
+
+    
+
+# ============================================================
+# ============ IA: APRENDIZAGEM COM AJUSTES DO CEO ===========
+# ============================================================
+
+def guardar_ajuste_ceo(farmacia_id, mes, ano, sugestao_ia, valor_aceito, notas=""):
+    """
+    Guarda um ajuste do CEO.
+    A IA usa isto para aprender padrões.
+    """
+    try:
+        # Calcular % de diferença
+        diferenca = 0.0
+        if sugestao_ia > 0:
+            diferenca = ((valor_aceito - sugestao_ia) / sugestao_ia) * 100
+
+        dados = {
+            "farmacia_id": farmacia_id,
+            "mes": mes,
+            "ano": ano,
+            "sugestao_ia": float(sugestao_ia),
+            "valor_aceito": float(valor_aceito),
+            "diferenca_pct": round(diferenca, 2),
+            "notas": notas,
+        }
+
+        return _post("ajustes_ceo", dados)
+    except Exception as e:
+        print(f"[Ajustes] Erro ao guardar: {e}")
+        return False
+
+
+def obter_padrao_ajuste(farmacia_id, mes):
+    """
+    Calcula o padrão de ajuste para uma farmácia e mês.
+    Retorna % média de ajuste com base em ajustes anteriores.
+    """
+    try:
+        r = _get("ajustes_ceo", {
+            "select": "diferenca_pct",
+            "farmacia_id": f"eq.{farmacia_id}",
+            "mes": f"eq.{mes}",
+        })
+
+        if not r:
+            return None
+
+        valores = [a.get("diferenca_pct", 0) for a in r if a.get("diferenca_pct") is not None]
+        if not valores:
+            return None
+
+        # Média
+        media = sum(valores) / len(valores)
+        return {
+            "media_pct": round(media, 2),
+            "num_ajustes": len(valores),
+        }
+    except Exception as e:
+        print(f"[Ajustes] Erro ao calcular padrao: {e}")
+        return None
+
+
+def sugerir_com_aprendizagem(farmacia_id, mes, ano):
+    """
+    Combina a sugestão base com o padrão aprendido.
+    Retorna dict com sugestão ajustada.
+    """
+    # Sugestão base
+    base = sugerir_orcamento_farmacia(farmacia_id, mes, ano)
+
+    # Padrão aprendido
+    padrao = obter_padrao_ajuste(farmacia_id, mes)
+
+    resultado = {
+        "sugestao_base": base.get("sugestao", 0),
+        "sugestao_final": base.get("sugestao", 0),
+        "ajuste_pct": 0.0,
+        "tem_historico": bool(padrao),
+        "num_ajustes": 0,
+        "metodo": base.get("metodo", ""),
+        "base_ano_passado": base.get("base_ano_passado", 0),
+        "base_3meses": base.get("base_3meses", 0),
+        "tendencia": base.get("tendencia", 0),
+    }
+
+    if padrao:
+        sugestao_ajustada = base.get("sugestao", 0) * (1 + padrao["media_pct"] / 100)
+        resultado["sugestao_final"] = round(sugestao_ajustada, 2)
+        resultado["ajuste_pct"] = padrao["media_pct"]
+        resultado["num_ajustes"] = padrao["num_ajustes"]
+
+    return resultado

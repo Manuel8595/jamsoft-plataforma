@@ -621,8 +621,9 @@ def mostrar_orcamentos():
                     with col_b:
                         st.metric("Sugestao IA", _fmt_kz(valor))
 
-                # Botão para aceitar
-                col_btn1, col_btn2 = st.columns([1, 5])
+                               # Botões de acção
+                col_btn1, col_btn2, col_btn3, col_btn4 = st.columns([1, 1, 2, 4])
+
                 with col_btn1:
                     if st.button("✅ Aceitar", key=f"aceitar_ia_{fid}"):
                         if valor > 0:
@@ -642,8 +643,99 @@ def mostrar_orcamentos():
                                 st.rerun()
                             else:
                                 st.error("Erro ao guardar")
-                        else:
-                            st.warning("Valor sugerido e 0")
+
+                with col_btn2:
+                    if st.button("✏️ Ajustar", key=f"ajustar_ia_{fid}"):
+                        st.session_state[f"ajustar_aberto_{fid}"] = True
+
+                with col_btn3:
+                    if st.button("📝 Modo Treino", key=f"treino_ia_{fid}"):
+                        st.session_state[f"treino_aberto_{fid}"] = True
+
+                # Painel de ajuste
+                if st.session_state.get(f"ajustar_aberto_{fid}", False):
+                    with st.expander("✏️ Ajustar valor", expanded=True):
+                        novo_valor = st.number_input(
+                            "Valor ajustado (Kz)",
+                            min_value=0.0,
+                            value=float(valor),
+                            step=50000.0,
+                            key=f"ajuste_val_{fid}",
+                        )
+                        notas = st.text_input(
+                            "Motivo do ajuste (opcional)",
+                            key=f"ajuste_notas_{fid}",
+                        )
+                        col_a, col_b = st.columns(2)
+                        with col_a:
+                            if st.button("💾 Guardar ajuste", key=f"save_ajuste_{fid}"):
+                                from services.supabase_client import (criar_meta,
+                                                                       guardar_ajuste_ceo)
+                                # Guardar meta
+                                ok = criar_meta(
+                                    mes=mes_num, ano=ano_escolhido,
+                                    farmacia_id=fid,
+                                    orcamento=novo_valor,
+                                    observacoes=f"Ajustado pelo CEO. {notas}",
+                                    definido_por="CEO",
+                                )
+                                # Guardar ajuste para IA aprender
+                                guardar_ajuste_ceo(
+                                    farmacia_id=fid,
+                                    mes=mes_num,
+                                    ano=ano_escolhido,
+                                    sugestao_ia=valor,
+                                    valor_aceito=novo_valor,
+                                    notas=notas,
+                                )
+                                if ok:
+                                    st.success(f"Ajustado: {_fmt_kz(novo_valor)}")
+                                    st.session_state[f"ajustar_aberto_{fid}"] = False
+                                    st.cache_data.clear()
+                                    import time as _t2
+                                    _t2.sleep(1)
+                                    st.rerun()
+                        with col_b:
+                            if st.button("❌ Fechar", key=f"close_ajuste_{fid}"):
+                                st.session_state[f"ajustar_aberto_{fid}"] = False
+                                st.rerun()
+
+                # Painel de modo treino
+                if st.session_state.get(f"treino_aberto_{fid}", False):
+                    with st.expander("📝 Modo Treino — Ensina a IA", expanded=True):
+                        st.caption(
+                            "Ajusta o valor. A IA vai aprender o teu padrão "
+                            "e usar nas próximas sugestões (por farmácia + por mês)."
+                        )
+                        valor_treino = st.number_input(
+                            "Valor a ensinar (Kz)",
+                            min_value=0.0,
+                            value=float(valor),
+                            step=50000.0,
+                            key=f"treino_val_{fid}",
+                        )
+                        motivo = st.text_input(
+                            "Motivo (ex: Dezembro vende mais)",
+                            key=f"treino_notas_{fid}",
+                        )
+                        if st.button("🧠 Ensinar IA", key=f"ensinar_ia_{fid}"):
+                            from services.supabase_client import guardar_ajuste_ceo
+                            ok = guardar_ajuste_ceo(
+                                farmacia_id=fid,
+                                mes=mes_num,
+                                ano=ano_escolhido,
+                                sugestao_ia=valor,
+                                valor_aceito=valor_treino,
+                                notas=motivo,
+                            )
+                            if ok:
+                                st.success(f"IA aprendeu: {_fmt_kz(valor_treino)}")
+                                st.session_state[f"treino_aberto_{fid}"] = False
+                                import time as _t3
+                                _t3.sleep(1)
+                                st.rerun()
+                            else:
+                                st.error("Erro ao ensinar")
 
             st.markdown("---")
 
