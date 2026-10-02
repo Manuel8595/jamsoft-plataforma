@@ -55,10 +55,10 @@ def _placeholder(titulo, icone, descricao, fase):
 
 def mostrar_ranking():
     st.title("Ranking de Farmacias")
-    st.caption("Compare o desempenho de todas as farmacias do pais")
+    st.caption("Desempenho comparado — vendas, metas e crescimento")
     st.markdown("---")
 
-    col1, col2, col3 = st.columns([2, 2, 3])
+    col1, col2, col3, col4 = st.columns([2, 2, 1, 2])
     hoje = datetime.now()
 
     with col1:
@@ -69,29 +69,34 @@ def mostrar_ranking():
     with col3:
         st.write("")
         st.write("")
-        comparar = st.checkbox("Comparar com outro ano", key="rank_comparar")
+        if st.button("🔄", use_container_width=True, key="rank_refresh"):
+            st.cache_data.clear()
+            st.rerun()
+    with col4:
+        st.write("")
+        comparar = st.checkbox("Comparar com mes anterior", key="rank_comparar")
 
     mes_num = MESES.index(mes_escolhido) + 1
 
-    mes_comp = None
-    ano_comp = None
-    if comparar:
-        col_a, col_b = st.columns([2, 2])
-        with col_a:
-            mes_comp = st.selectbox("Mes (comparar)", MESES, index=hoje.month - 1, key="rank_mes_comp")
-        with col_b:
-            anos_comp = [a for a in anos if a != ano_escolhido]
-            if anos_comp:
-                ano_comp = st.selectbox("Ano (comparar)", anos_comp, index=0, key="rank_ano_comp")
+    # Mês anterior
+    mes_ant = mes_num - 1
+    ano_ant = ano_escolhido
+    if mes_ant < 1:
+        mes_ant = 12
+        ano_ant -= 1
 
     st.markdown("---")
 
     with st.spinner("A carregar..."):
         resumo_atual = resumo_por_farmacia_mes(mes_num, ano_escolhido)
-        resumo_comp = None
-        if comparar and mes_comp and ano_comp:
-            mes_comp_num = MESES.index(mes_comp) + 1
-            resumo_comp = resumo_por_farmacia_mes(mes_comp_num, ano_comp)
+        metas = metas_activas(mes_num, ano_escolhido)
+        resumo_ant = resumo_por_farmacia_mes(mes_ant, ano_ant) if comparar else {}
+
+    metas_por_farm = {}
+    for m in metas:
+        fid = m.get("farmacia_id")
+        if fid is not None:
+            metas_por_farm[fid] = m
 
     total_geral = sum(r["total"] for r in resumo_atual.values())
     num_geral = sum(r["num_vendas"] for r in resumo_atual.values())
@@ -106,7 +111,7 @@ def mostrar_ranking():
     with c4: st.metric("Ticket Medio", _fmt_kz(ticket_geral))
 
     st.markdown("---")
-    st.subheader("Ranking")
+    st.subheader("🏆 Ranking")
 
     ranking = sorted(resumo_atual.values(), key=lambda x: x["total"], reverse=True)
     if not ranking:
@@ -115,30 +120,71 @@ def mostrar_ranking():
 
     for i, r in enumerate(ranking, start=1):
         f = r["farmacia"]
+        fid = f["id"]
         total = r["total"]
         num = r["num_vendas"]
         ticket = r["ticket_medio"]
 
-        if i == 1: medalha = "1º"
-        elif i == 2: medalha = "2º"
-        elif i == 3: medalha = "3º"
+        if i == 1: medalha = "🥇"
+        elif i == 2: medalha = "🥈"
+        elif i == 3: medalha = "🥉"
         else: medalha = f"{i}º"
 
-        if total > 0: status = "Activa"
-        else: status = "Sem vendas"
+        meta = metas_por_farm.get(fid)
+        orcamento = meta.get("orcamento_mes", 0) if meta else 0
+        perc_meta = (total / orcamento * 100) if orcamento > 0 else 0
 
-        row = st.columns([0.5, 2.5, 1.2, 1, 1, 1.2])
-        with row[0]: st.markdown(f"**{medalha}**")
-        with row[1]:
-            st.markdown(f"**{f['nome']}**")
-            st.caption(f"{f.get('endereco', '-')}")
-        with row[2]: st.markdown(f"**{_fmt_kz(total)}**")
-        with row[3]: st.markdown(f"{num}")
-        with row[4]: st.markdown(f"{_fmt_kz(ticket)}")
-        with row[5]: st.markdown(status)
-        st.markdown("")
+        cresc = None
+        if comparar:
+            total_ant = resumo_ant.get(fid, {}).get("total", 0)
+            if total_ant > 0:
+                cresc = ((total - total_ant) / total_ant) * 100
 
-        st.markdown("---")
+        if orcamento > 0:
+            if perc_meta >= 100:
+                estado_txt = f"✅ {perc_meta:.0f}%"
+            elif perc_meta >= 70:
+                estado_txt = f"🟢 {perc_meta:.0f}%"
+            elif perc_meta >= 30:
+                estado_txt = f"🟡 {perc_meta:.0f}%"
+            else:
+                estado_txt = f"🔴 {perc_meta:.0f}%"
+        else:
+            estado_txt = "—"
+
+        with st.container(border=True):
+            row = st.columns([0.5, 2.5, 1.3, 1, 1.2, 1.2, 1.2])
+            with row[0]:
+                st.markdown(f"## {medalha}")
+            with row[1]:
+                st.markdown(f"### {f['nome']}")
+                st.caption(f"{f.get('endereco', '-')}")
+            with row[2]:
+                st.metric("Vendido", _fmt_kz(total))
+            with row[3]:
+                st.metric("Vendas", f"{num}")
+            with row[4]:
+                st.metric("Ticket", _fmt_kz(ticket))
+            with row[5]:
+                if orcamento > 0:
+                    st.metric("Meta", _fmt_kz(orcamento))
+                else:
+                    st.markdown("**Meta**")
+                    st.caption("_nao definida_")
+            with row[6]:
+                st.markdown("**Estado**")
+                st.markdown(f"**{estado_txt}**")
+
+            if comparar and cresc is not None:
+                st.markdown("")
+                if cresc > 5:
+                    st.success(f"📈 Cresceu {cresc:+.1f}% vs mês anterior")
+                elif cresc < -5:
+                    st.error(f"📉 Caiu {cresc:+.1f}% vs mês anterior")
+                else:
+                    st.info(f"➡️ Estável {cresc:+.1f}% vs mês anterior")
+
+    st.markdown("---")
     st.subheader("Grafico de Vendas")
     dados_grafico = {r["farmacia"]["nome"][:20]: r["total"] for r in ranking}
     st.bar_chart(dados_grafico, height=320, use_container_width=True)
@@ -156,7 +202,6 @@ def mostrar_ranking():
     with st.spinner("A carregar farmacias..."):
         farmacias = listar_farmacias()
 
-
     if st.button("🤖 Analisar rentabilidade", use_container_width=True, key="btn_rent"):
         with st.spinner("A analisar..."):
             from services.supabase_client import calcular_rentabilidade_farmacia
@@ -167,7 +212,6 @@ def mostrar_ranking():
         st.session_state["rentabilidades"] = rentabilidades
         st.session_state["rent_ano"] = ano_escolhido
 
-    # Mostrar se existir
     if "rentabilidades" in st.session_state:
         rent_data = st.session_state["rentabilidades"]
         rent_ano = st.session_state.get("rent_ano")
@@ -182,7 +226,6 @@ def mostrar_ranking():
                 with st.container(border=True):
                     st.markdown(f"### {f['nome']}")
 
-                    # Totais do ano
                     ano_tot = rent.get("ano_total", {})
                     c1, c2, c3, c4 = st.columns(4)
                     with c1:
@@ -200,7 +243,6 @@ def mostrar_ranking():
                         else:
                             st.metric("Margem", f"🔴 {margem:.1f}%")
 
-                    # Ciclos (3 em 3 meses)
                     st.markdown("**Por ciclo (3 meses):**")
                     ciclos = rent.get("ciclos", {})
                     if ciclos:
@@ -214,7 +256,6 @@ def mostrar_ranking():
                                     f"Margem: {dados_cic.get('margem_pct', 0):.0f}%"
                                 )
 
-                    # Sugestoes da IA
                     sugestoes = rent.get("sugestoes", [])
                     if sugestoes:
                         st.markdown("**🤖 Sugestoes da IA:**")
@@ -397,28 +438,13 @@ def mostrar_orcamentos():
     orcamento_total = sum(m.get("orcamento_mes", 0) or 0 for m in metas)
     vendido_total = sum(r["total"] for r in resumo_vendas.values())
 
-    # ============================================================
-    # CÁLCULO DAS METAS POR PERÍODO
-    # ============================================================
     from calendar import monthrange
-
-    # Número de dias do mês
     dias_no_mes = monthrange(ano_escolhido, mes_num)[1]
-
-    # Dias úteis (aproximação: 30 dias como padrão)
-    # Número de semanas no mês
     semanas_no_mes = dias_no_mes / 7
-
-    # Ano = mês × 12
     meta_anual = orcamento_total * 12
-
-    # Divisões do mês
     meta_diaria = orcamento_total / dias_no_mes if dias_no_mes > 0 else 0
     meta_semanal = orcamento_total / semanas_no_mes if semanas_no_mes > 0 else 0
 
-    # ============================================================
-    # ORÇAMENTO DO PAÍS — VISTA GERAL
-    # ============================================================
     st.subheader(f"Orcamento do Pais - {mes_escolhido} {ano_escolhido}")
 
     if orcamento_total > 0:
@@ -452,13 +478,9 @@ def mostrar_orcamentos():
     else:
         st.info("Sem orcamento definido para este mes.")
 
-        # ============================================================
-    # METAS DETALHADAS POR PERÍODO (com configuração por farmácia)
-    # ============================================================
     from services.supabase_client import listar_todas_configs
     todas_configs = listar_todas_configs()
 
-    # Ver o que mostrar (agregado do país — mostra se PELO MENOS UMA farmácia tem activo)
     mostrar_dia_pais = any(c.get("mostrar_dia", True) for c in todas_configs.values()) if todas_configs else True
     mostrar_semana_pais = any(c.get("mostrar_semana", True) for c in todas_configs.values()) if todas_configs else True
     mostrar_mes_pais = any(c.get("mostrar_mes", True) for c in todas_configs.values()) if todas_configs else True
@@ -468,10 +490,8 @@ def mostrar_orcamentos():
         st.markdown("---")
         st.subheader("Progresso por periodo")
 
-        # Calcular vendas por período
         hoje_data = datetime.now()
 
-        # Vendas do dia
         vendas_hoje = 0
         if hoje_data.month == mes_num and hoje_data.year == ano_escolhido:
             try:
@@ -481,7 +501,6 @@ def mostrar_orcamentos():
             except Exception:
                 vendas_hoje = 0
 
-        # Vendas da semana
         try:
             from services.supabase_client import vendas_ultimos_dias
             v_semana = vendas_ultimos_dias(dias=7)
@@ -489,10 +508,8 @@ def mostrar_orcamentos():
         except Exception:
             vendas_semana = 0
 
-        # Vendas do mês
         vendas_mes = vendido_total
 
-        # Vendas do ano
         try:
             from services.supabase_client import vendas_por_mes
             vendas_ano = 0
@@ -502,7 +519,6 @@ def mostrar_orcamentos():
         except Exception:
             vendas_ano = 0
 
-        # ===== Meta Diária =====
         if mostrar_dia_pais:
             col1, col2, col3 = st.columns(3)
             with col1:
@@ -515,7 +531,6 @@ def mostrar_orcamentos():
             st.progress(min(perc_dia / 100, 1.0))
             st.markdown("")
 
-        # ===== Meta Semanal =====
         if mostrar_semana_pais:
             col1, col2, col3 = st.columns(3)
             with col1:
@@ -528,7 +543,6 @@ def mostrar_orcamentos():
             st.progress(min(perc_sem / 100, 1.0))
             st.markdown("")
 
-        # ===== Meta Mensal =====
         if mostrar_mes_pais:
             col1, col2, col3 = st.columns(3)
             with col1:
@@ -541,7 +555,6 @@ def mostrar_orcamentos():
             st.progress(min(perc_mes / 100, 1.0))
             st.markdown("")
 
-        # ===== Meta Anual =====
         if mostrar_ano_pais:
             col1, col2, col3 = st.columns(3)
             with col1:
@@ -576,13 +589,11 @@ def mostrar_orcamentos():
         st.session_state["sugestoes_mes"] = mes_num
         st.session_state["sugestoes_ano"] = ano_escolhido
 
-    # Mostrar sugestões se existirem
     if "sugestoes_ia" in st.session_state:
         sugestoes = st.session_state["sugestoes_ia"]
         sug_mes = st.session_state.get("sugestoes_mes")
         sug_ano = st.session_state.get("sugestoes_ano")
 
-        # Só mostrar se for o mesmo mês/ano escolhido
         if sug_mes == mes_num and sug_ano == ano_escolhido:
             st.markdown("")
             st.markdown("**Sugestoes geradas:**")
@@ -621,8 +632,8 @@ def mostrar_orcamentos():
                     with col_b:
                         st.metric("Sugestao IA", _fmt_kz(valor))
 
-                               # Botões de acção
-                col_btn1, col_btn2, col_btn3, col_btn4 = st.columns([1, 1, 2, 4])
+                # Botões de acção
+                col_btn1, col_btn2, col_btn3 = st.columns([1, 1, 2])
 
                 with col_btn1:
                     if st.button("✅ Aceitar", key=f"aceitar_ia_{fid}"):
@@ -652,7 +663,6 @@ def mostrar_orcamentos():
                     if st.button("📝 Modo Treino", key=f"treino_ia_{fid}"):
                         st.session_state[f"treino_aberto_{fid}"] = True
 
-                # Painel de ajuste
                 if st.session_state.get(f"ajustar_aberto_{fid}", False):
                     with st.expander("✏️ Ajustar valor", expanded=True):
                         novo_valor = st.number_input(
@@ -671,7 +681,6 @@ def mostrar_orcamentos():
                             if st.button("💾 Guardar ajuste", key=f"save_ajuste_{fid}"):
                                 from services.supabase_client import (criar_meta,
                                                                        guardar_ajuste_ceo)
-                                # Guardar meta
                                 ok = criar_meta(
                                     mes=mes_num, ano=ano_escolhido,
                                     farmacia_id=fid,
@@ -679,7 +688,6 @@ def mostrar_orcamentos():
                                     observacoes=f"Ajustado pelo CEO. {notas}",
                                     definido_por="CEO",
                                 )
-                                # Guardar ajuste para IA aprender
                                 guardar_ajuste_ceo(
                                     farmacia_id=fid,
                                     mes=mes_num,
@@ -700,7 +708,6 @@ def mostrar_orcamentos():
                                 st.session_state[f"ajustar_aberto_{fid}"] = False
                                 st.rerun()
 
-                # Painel de modo treino
                 if st.session_state.get(f"treino_aberto_{fid}", False):
                     with st.expander("📝 Modo Treino — Ensina a IA", expanded=True):
                         st.caption(
@@ -736,8 +743,6 @@ def mostrar_orcamentos():
                                 st.rerun()
                             else:
                                 st.error("Erro ao ensinar")
-
-            st.markdown("---")
 
     # ============================================================
     # DEFINIR / EDITAR
@@ -790,6 +795,7 @@ def mostrar_orcamentos():
                 st.rerun()
             else:
                 st.error("Erro ao guardar.")
+
 
 def mostrar_vendas():
     st.title("Vendas")
@@ -964,7 +970,6 @@ def mostrar_stock():
         produtos = listar_produtos_stock(farm_id)
         lotes_vencer = lotes_a_vencer(90, farm_id)
 
-    # Resumo
     st.subheader("Resumo")
     c1, c2, c3, c4 = st.columns(4)
     with c1:
@@ -981,7 +986,6 @@ def mostrar_stock():
 
     st.markdown("---")
 
-    # Lista de produtos
     if filtro == "Estoque Baixo":
         produtos_filtrados = [
             p for p in produtos
@@ -1023,7 +1027,6 @@ def mostrar_stock():
         produtos_filtrados = produtos
         st.subheader(f"Todos os Produtos ({len(produtos)})")
 
-    # Lista de produtos (excepto no modo "A Vencer")
     if produtos_filtrados is not None:
         if not produtos_filtrados:
             st.info("Sem produtos.")
@@ -1381,7 +1384,6 @@ def mostrar_diagnostico():
     info = resultado.get("info", [])
     tabelas = resultado.get("tabelas", {})
 
-    # Resumo
     st.subheader("📊 Resumo do Sistema")
     c1, c2, c3 = st.columns(3)
     with c1:
@@ -1400,7 +1402,6 @@ def mostrar_diagnostico():
 
     st.markdown("---")
 
-    # Problemas
     if problemas:
         st.subheader("🔴 Problemas Criticos")
         for p in problemas:
@@ -1409,11 +1410,9 @@ def mostrar_diagnostico():
                     f"**{p['area']}**\n\n"
                     f"{p['problema']}\n\n"
                     f"💡 **Solucao:** {p['solucao']}"
-                )  
-                      
+                )
                 st.markdown("")
 
-    # Avisos
     if avisos:
         st.subheader("🟡 Avisos")
         for a in avisos:
@@ -1425,7 +1424,6 @@ def mostrar_diagnostico():
                 )
         st.markdown("")
 
-    # Informacoes
     if info:
         st.subheader("🔵 Informacoes")
         for i in info:
