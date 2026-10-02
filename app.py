@@ -76,6 +76,47 @@ def mostrar_login():
                 else:
                     st.error("Email ou senha incorrectos.")
 
+# ============================================================
+# ENDPOINT PARA CRON-JOB.ORG (envio semanal de emails)
+# ============================================================
+query_params_cron = st.query_params
+if query_params_cron.get("cron") == "email_semanal":
+    token = query_params_cron.get("token", "")
+    TOKEN_ESPERADO = "jamsoft-cron-2026-secreto"  # Podes mudar
+
+    if token != TOKEN_ESPERADO:
+        st.error("Token inválido")
+        st.stop()
+
+    # Aqui executa o envio
+    try:
+        from sincronizacao import (carregar_sessao, renovar_sessao,
+                                     enviar_relatorio_semanal)
+        from services.supabase_client import definir_jwt
+
+        # Restaurar sessão Supabase
+        sessao = carregar_sessao()
+        if not sessao:
+            st.error("Sem sessão Supabase guardada")
+            st.stop()
+
+        ok_renova, msg = renovar_sessao(sessao)
+        if not ok_renova:
+            st.error(f"Sessão inválida: {msg}")
+            st.stop()
+
+        # Enviar emails
+        ok, msg_envio = enviar_relatorio_semanal()
+        if ok:
+            st.success(f"✅ Relatório semanal enviado: {msg_envio}")
+        else:
+            st.error(f"❌ Erro: {msg_envio}")
+
+        st.stop()
+
+    except Exception as e:
+        st.error(f"Erro: {e}")
+        st.stop()
 
 query_params = st.query_params
 token_convite = query_params.get("convite", None)
@@ -150,7 +191,6 @@ if st.session_state["logado"]:
         mostrar_definicoes()
     elif pagina == "🔐 Administracao":
         mostrar_admin(user)
-    elif pagina == "🖥️ Diagnostico Remoto":
         mostrar_diagnostico_remoto(user)
     elif pagina == "⚙️ Configuracao":
         mostrar_configuracao()
