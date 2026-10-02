@@ -3,6 +3,7 @@ from config_cloud import CLOUD_ACCESS_ENABLED
 from services.auth import autenticar
 from services.supabase_client import definir_jwt, limpar_jwt
 from pages_admin import mostrar_admin
+from pages_config import mostrar_configuracao
 from pages_registo import mostrar_registo
 from dashboard import mostrar_dashboard
 from pages_secundarias import (
@@ -104,6 +105,7 @@ if st.session_state["logado"]:
             "🩺 Diagnostico",
             "⚙️ Definicoes",
             "🔐 Administracao",
+            "⚙️ Configuracao",
         ]
 
         pagina = st.radio(
@@ -146,6 +148,8 @@ if st.session_state["logado"]:
         mostrar_definicoes()
     elif pagina == "🔐 Administracao":
         mostrar_admin(user)
+    elif pagina == "⚙️ Configuracao":
+        mostrar_configuracao()
 
 else:
     mostrar_login()

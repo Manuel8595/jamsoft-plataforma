@@ -872,3 +872,59 @@ def sugerir_orcamento_farmacia(farmacia_id, mes, ano):
     resultado["metodo"] = metodo
 
     return resultado
+
+
+
+# ============================================================
+# ============ CONFIGURACAO POR FARMACIA =====================
+# ============================================================
+
+def obter_config_farmacia(farmacia_id):
+    """Obtém a configuração de uma farmácia."""
+    r = _get("config_farmacia", {
+        "select": "*",
+        "farmacia_id": f"eq.{farmacia_id}",
+        "limit": "1",
+    })
+    if r:
+        return r[0]
+    return {
+        "farmacia_id": farmacia_id,
+        "mostrar_dia": True,
+        "mostrar_semana": True,
+        "mostrar_mes": True,
+        "mostrar_ano": True,
+    }
+
+
+def guardar_config_farmacia(farmacia_id, dia, semana, mes, ano):
+    """Cria ou actualiza a configuração de uma farmácia."""
+    dados = {
+        "farmacia_id": farmacia_id,
+        "mostrar_dia": bool(dia),
+        "mostrar_semana": bool(semana),
+        "mostrar_mes": bool(mes),
+        "mostrar_ano": bool(ano),
+        "updated_at": datetime.now().isoformat(),
+    }
+
+    # Verificar se já existe
+    r = _get("config_farmacia", {
+        "select": "id",
+        "farmacia_id": f"eq.{farmacia_id}",
+        "limit": "1",
+    })
+
+    if r:
+        # Actualizar
+        return _patch("config_farmacia", f"farmacia_id=eq.{farmacia_id}", dados)
+    else:
+        # Criar
+        dados["created_at"] = datetime.now().isoformat()
+        return _post("config_farmacia", dados)
+
+
+def listar_todas_configs():
+    """Retorna todas as configurações (dict: farmacia_id -> config)."""
+    r = _get("config_farmacia", {"select": "*"}) or []
+    return {c["farmacia_id"]: c for c in r}

@@ -365,22 +365,26 @@ def mostrar_orcamentos():
     else:
         st.info("Sem orcamento definido para este mes.")
 
+        # ============================================================
+    # METAS DETALHADAS POR PERÍODO (com configuração por farmácia)
     # ============================================================
-    # METAS DETALHADAS POR PERÍODO (progresso real)
-    # ============================================================
+    from services.supabase_client import listar_todas_configs
+    todas_configs = listar_todas_configs()
+
+    # Ver o que mostrar (agregado do país — mostra se PELO MENOS UMA farmácia tem activo)
+    mostrar_dia_pais = any(c.get("mostrar_dia", True) for c in todas_configs.values()) if todas_configs else True
+    mostrar_semana_pais = any(c.get("mostrar_semana", True) for c in todas_configs.values()) if todas_configs else True
+    mostrar_mes_pais = any(c.get("mostrar_mes", True) for c in todas_configs.values()) if todas_configs else True
+    mostrar_ano_pais = any(c.get("mostrar_ano", True) for c in todas_configs.values()) if todas_configs else True
+
     if orcamento_total > 0:
         st.markdown("---")
         st.subheader("Progresso por periodo")
 
-        # Calcular vendas por período (do mês escolhido)
-        # Dia de hoje
+        # Calcular vendas por período
         hoje_data = datetime.now()
-        if hoje_data.month == mes_num and hoje_data.year == ano_escolhido:
-            dia_actual = hoje_data.day
-        else:
-            dia_actual = 1
 
-        # Vendas do dia (só se for o mês actual)
+        # Vendas do dia
         vendas_hoje = 0
         if hoje_data.month == mes_num and hoje_data.year == ano_escolhido:
             try:
@@ -390,7 +394,7 @@ def mostrar_orcamentos():
             except Exception:
                 vendas_hoje = 0
 
-        # Vendas da semana (últimos 7 dias)
+        # Vendas da semana
         try:
             from services.supabase_client import vendas_ultimos_dias
             v_semana = vendas_ultimos_dias(dias=7)
@@ -412,97 +416,55 @@ def mostrar_orcamentos():
             vendas_ano = 0
 
         # ===== Meta Diária =====
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            perc_dia = (vendas_hoje / meta_diaria * 100) if meta_diaria > 0 else 0
-            st.metric("Meta Diaria (hoje)", _fmt_kz(meta_diaria))
-        with col2:
-            st.metric("Vendido hoje", _fmt_kz(vendas_hoje))
-        with col3:
-            st.metric("Atingido hoje", f"{perc_dia:.1f}%")
-        st.progress(min(perc_dia / 100, 1.0))
-
-        st.markdown("")
+        if mostrar_dia_pais:
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                perc_dia = (vendas_hoje / meta_diaria * 100) if meta_diaria > 0 else 0
+                st.metric("Meta Diaria (hoje)", _fmt_kz(meta_diaria))
+            with col2:
+                st.metric("Vendido hoje", _fmt_kz(vendas_hoje))
+            with col3:
+                st.metric("Atingido hoje", f"{perc_dia:.1f}%")
+            st.progress(min(perc_dia / 100, 1.0))
+            st.markdown("")
 
         # ===== Meta Semanal =====
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            perc_sem = (vendas_semana / meta_semanal * 100) if meta_semanal > 0 else 0
-            st.metric("Meta Semanal", _fmt_kz(meta_semanal))
-        with col2:
-            st.metric("Vendido (7 dias)", _fmt_kz(vendas_semana))
-        with col3:
-            st.metric("Atingido semana", f"{perc_sem:.1f}%")
-        st.progress(min(perc_sem / 100, 1.0))
-
-        st.markdown("")
+        if mostrar_semana_pais:
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                perc_sem = (vendas_semana / meta_semanal * 100) if meta_semanal > 0 else 0
+                st.metric("Meta Semanal", _fmt_kz(meta_semanal))
+            with col2:
+                st.metric("Vendido (7 dias)", _fmt_kz(vendas_semana))
+            with col3:
+                st.metric("Atingido semana", f"{perc_sem:.1f}%")
+            st.progress(min(perc_sem / 100, 1.0))
+            st.markdown("")
 
         # ===== Meta Mensal =====
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            perc_mes = (vendas_mes / orcamento_total * 100) if orcamento_total > 0 else 0
-            st.metric("Meta Mensal", _fmt_kz(orcamento_total))
-        with col2:
-            st.metric("Vendido no mes", _fmt_kz(vendas_mes))
-        with col3:
-            st.metric("Atingido mes", f"{perc_mes:.1f}%")
-        st.progress(min(perc_mes / 100, 1.0))
-
-        st.markdown("")
+        if mostrar_mes_pais:
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                perc_mes = (vendas_mes / orcamento_total * 100) if orcamento_total > 0 else 0
+                st.metric("Meta Mensal", _fmt_kz(orcamento_total))
+            with col2:
+                st.metric("Vendido no mes", _fmt_kz(vendas_mes))
+            with col3:
+                st.metric("Atingido mes", f"{perc_mes:.1f}%")
+            st.progress(min(perc_mes / 100, 1.0))
+            st.markdown("")
 
         # ===== Meta Anual =====
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            perc_ano = (vendas_ano / meta_anual * 100) if meta_anual > 0 else 0
-            st.metric("Meta Anual", _fmt_kz(meta_anual))
-        with col2:
-            st.metric("Vendido no ano", _fmt_kz(vendas_ano))
-        with col3:
-            st.metric("Atingido ano", f"{perc_ano:.1f}%")
-        st.progress(min(perc_ano / 100, 1.0))
-
-    # ============================================================
-    # POR FARMÁCIA
-    # ============================================================
-    st.markdown("---")
-    st.subheader("Por Farmacia")
-
-    cols = st.columns([2.5, 1.5, 1.5, 1, 1.5])
-    with cols[0]: st.markdown("**Farmacia**")
-    with cols[1]: st.markdown("**Orcamento**")
-    with cols[2]: st.markdown("**Vendido**")
-    with cols[3]: st.markdown("**%**")
-    with cols[4]: st.markdown("**Estado**")
-
-    st.markdown("")
-
-    for f in farmacias:
-        fid = f["id"]
-        meta = metas_por_farm.get(fid)
-        orcamento = meta.get("orcamento_mes", 0) if meta else 0
-        vendido = resumo_vendas.get(fid, {}).get("total", 0)
-
-        if orcamento > 0:
-            perc = (vendido / orcamento) * 100
-            if perc >= 100: estado = "Batida"
-            elif perc >= 70: estado = "Bom"
-            elif perc >= 30: estado = "Baixo"
-            else: estado = "Critico"
-            perc_txt = f"{perc:.0f}%"
-        else:
-            estado = "Sem meta"
-            perc_txt = "-"
-
-        row = st.columns([2.5, 1.5, 1.5, 1, 1.5])
-        with row[0]: st.markdown(f"**{f['nome']}**")
-        with row[1]:
-            if orcamento > 0: st.markdown(_fmt_kz(orcamento))
-            else: st.markdown("_nao definido_")
-        with row[2]: st.markdown(f"**{_fmt_kz(vendido)}**")
-        with row[3]: st.markdown(perc_txt)
-        with row[4]: st.markdown(estado)
-        st.markdown("")
-
+        if mostrar_ano_pais:
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                perc_ano = (vendas_ano / meta_anual * 100) if meta_anual > 0 else 0
+                st.metric("Meta Anual", _fmt_kz(meta_anual))
+            with col2:
+                st.metric("Vendido no ano", _fmt_kz(vendas_ano))
+            with col3:
+                st.metric("Atingido ano", f"{perc_ano:.1f}%")
+            st.progress(min(perc_ano / 100, 1.0))
 
     # ============================================================
     # IA SUGERE ORÇAMENTOS
