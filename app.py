@@ -1,12 +1,13 @@
 import streamlit as st
+from pwa_utils import inject_pwa, mobile_css
 from config_cloud import CLOUD_ACCESS_ENABLED
 from services.auth import autenticar
 from services.supabase_client import definir_jwt, limpar_jwt
-from pages_admin import mostrar_admin
-from pages_admin import mostrar_diagnostico_remoto
+from pages_admin import mostrar_admin, mostrar_diagnostico_remoto
+from pages_secundarias import mostrar_chat_ia
 from pages_config import mostrar_configuracao
 from pages_registo import mostrar_registo
-from dashboard import mostrar_dashboard
+from plataforma_web.dashboard import mostrar_dashboard
 from pages_secundarias import (
     mostrar_ranking,
     mostrar_alertas,
@@ -22,10 +23,14 @@ from pages_secundarias import (
 
 st.set_page_config(
     page_title="JAM Soft - Monitorizacao",
-    page_icon="💊",
+    page_icon="static/icon-192.png",
     layout="wide",
     initial_sidebar_state="expanded",
 )
+
+# Activar PWA (app no telemóvel)
+inject_pwa()
+mobile_css()
 
 if not CLOUD_ACCESS_ENABLED:
     st.info("A plataforma online está temporariamente desligada.")
@@ -75,6 +80,7 @@ def mostrar_login():
                     st.rerun()
                 else:
                     st.error("Email ou senha incorrectos.")
+
 
 # ============================================================
 # ENDPOINT PARA CRON-JOB.ORG (envio semanal de emails)
@@ -222,37 +228,11 @@ if query_params_cron.get("cron") == "email_semanal":
     except Exception as e:
         st.error(f"Erro: {e}")
         st.stop()
-        
-    # Aqui executa o envio
-    try:
-        from sincronizacao import (carregar_sessao, renovar_sessao,
-                                     enviar_relatorio_semanal)
-        from services.supabase_client import definir_jwt
 
-        # Restaurar sessão Supabase
-        sessao = carregar_sessao()
-        if not sessao:
-            st.error("Sem sessão Supabase guardada")
-            st.stop()
 
-        ok_renova, msg = renovar_sessao(sessao)
-        if not ok_renova:
-            st.error(f"Sessão inválida: {msg}")
-            st.stop()
-
-        # Enviar emails
-        ok, msg_envio = enviar_relatorio_semanal()
-        if ok:
-            st.success(f"✅ Relatório semanal enviado: {msg_envio}")
-        else:
-            st.error(f"❌ Erro: {msg_envio}")
-
-        st.stop()
-
-    except Exception as e:
-        st.error(f"Erro: {e}")
-        st.stop()
-
+# ============================================================
+# CONVITES (registo via link)
+# ============================================================
 query_params = st.query_params
 token_convite = query_params.get("convite", None)
 
@@ -261,6 +241,9 @@ if token_convite:
     st.stop()
 
 
+# ============================================================
+# APLICAÇÃO PRINCIPAL (após login)
+# ============================================================
 if st.session_state["logado"]:
     user = st.session_state["utilizador"]
 
@@ -283,6 +266,7 @@ if st.session_state["logado"]:
             "⚙️ Definicoes",
             "🔐 Administracao",
             "🖥️ Diagnostico Remoto",
+            "💬 Chat IA",
             "⚙️ Configuracao",
         ]
 
@@ -302,6 +286,7 @@ if st.session_state["logado"]:
             st.session_state["pagina"] = "📊 Resumo do Pais"
             st.rerun()
 
+    # ─── Rotas ───
     if pagina == "📊 Resumo do Pais":
         mostrar_dashboard()
     elif pagina == "🏆 Ranking de Farmacias":
@@ -326,7 +311,10 @@ if st.session_state["logado"]:
         mostrar_definicoes()
     elif pagina == "🔐 Administracao":
         mostrar_admin(user)
+    elif pagina == "🖥️ Diagnostico Remoto":
         mostrar_diagnostico_remoto(user)
+    elif pagina == "💬 Chat IA":
+        mostrar_chat_ia()
     elif pagina == "⚙️ Configuracao":
         mostrar_configuracao()
 

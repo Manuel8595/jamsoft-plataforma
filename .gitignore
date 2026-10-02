@@ -5,3 +5,21 @@ __pycache__/
 venv/
 .venv/
 .streamlit/secrets.toml
+
+
+# Secrets (raiz + pasta .streamlit)
+secrets.toml
+.streamlit/secrets.toml
+
+# Temporários
+base64_output.json
+base64_dump.txt
+icon192.txt
+icon512.txt
+manifest.txt
+gerar_base64.py
+gerar_icones.py
+
+# OS
+.DS_Store
+Thumbs.db

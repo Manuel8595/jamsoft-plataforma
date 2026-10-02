@@ -1,0 +1,25 @@
+﻿{
+  "name": "JAM Soft — Plataforma Farmácias",
+  "short_name": "JAM Soft",
+  "description": "Monitorização de farmácias em Angola",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#ffffff",
+  "theme_color": "#0e7c66",
+  "lang": "pt-AO",
+  "icons": [
+    {
+      "src": "/static/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/static/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

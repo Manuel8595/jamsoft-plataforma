@@ -18,6 +18,7 @@ from services.supabase_client import (
     vendas_por_forma_pagamento,
     vendas_por_dia_mes,
     vendas_por_hora_mes,
+    vendas_ultimos_dias,
     top_produtos_mes,
     top_clientes_mes,
     listar_produtos_stock,
@@ -1529,3 +1530,277 @@ def mostrar_definicoes():
 
     st.markdown("---")
     st.caption("JAM Soft 2026 - Todos os direitos reservados")
+
+
+# ============================================================
+# ============ CHAT IA =======================================
+# ============================================================
+
+def mostrar_chat_ia():
+    """Chat IA — perguntar sobre vendas e dados em linguagem natural."""
+    import requests as _req
+
+    st.title("💬 Chat IA")
+    st.caption("Pergunta sobre as tuas farmácias em linguagem natural")
+    st.markdown("---")
+
+    # Configuração Groq
+    try:
+        GROQ_API_KEY = st.secrets.get("GROQ_API_KEY", "")
+    except Exception:
+        GROQ_API_KEY = ""
+
+    if not GROQ_API_KEY:
+        st.error(
+            "⚠️ A chave da IA não está configurada.\n\n"
+            "Vai a **Settings → Secrets** no Streamlit Cloud e adiciona:\n\n"
+            "```\nGROQ_API_KEY = \"gsk_...\"\n```"
+        )
+        return
+
+    st.markdown("### Perguntas sugeridas:")
+    c1, c2, c3, c4 = st.columns(4)
+    with c1:
+        if st.button("📊 Vendas de hoje", use_container_width=True):
+            st.session_state["chat_pergunta"] = "Quanto vendi hoje em todas as farmácias?"
+    with c2:
+        if st.button("🏆 Melhor farmácia", use_container_width=True):
+            st.session_state["chat_pergunta"] = "Qual foi a farmácia que mais vendeu este mês?"
+    with c3:
+        if st.button("📦 Stock baixo", use_container_width=True):
+            st.session_state["chat_pergunta"] = "Que produtos estão com stock baixo?"
+    with c4:
+        if st.button("📅 Resumo do mês", use_container_width=True):
+            st.session_state["chat_pergunta"] = "Como está o mês actual? Estou a bater a meta?"
+
+    st.markdown("---")
+
+    # Histórico
+    if "chat_historico" not in st.session_state:
+        st.session_state["chat_historico"] = []
+
+    # Mostrar histórico
+    for msg in st.session_state["chat_historico"]:
+        if msg["role"] == "user":
+            with st.chat_message("user"):
+                st.markdown(msg["content"])
+        else:
+            with st.chat_message("assistant"):
+                st.markdown(msg["content"])
+
+    # Input
+    pergunta = st.chat_input("Escreve a tua pergunta...")
+
+    # Se veio de botão sugerido
+    if "chat_pergunta" in st.session_state and st.session_state["chat_pergunta"]:
+        pergunta = st.session_state.pop("chat_pergunta")
+
+    if pergunta:
+        # Mostrar pergunta
+        with st.chat_message("user"):
+            st.markdown(pergunta)
+
+        st.session_state["chat_historico"].append({
+            "role": "user",
+            "content": pergunta,
+        })
+
+        # Gerar resposta
+        with st.chat_message("assistant"):
+            with st.spinner("A pensar..."):
+                resposta = _chat_ia_responder(pergunta, GROQ_API_KEY, st)
+            st.markdown(resposta)
+
+        st.session_state["chat_historico"].append({
+            "role": "assistant",
+            "content": resposta,
+        })
+
+    # Botão limpar
+    if st.session_state["chat_historico"]:
+        if st.button("🗑️ Limpar conversa"):
+            st.session_state["chat_historico"] = []
+            st.rerun()
+
+
+def _obter_contexto_ia():
+    """Recolhe dados para dar à IA como contexto."""
+    from datetime import datetime as _dt, timedelta
+
+    ctx = {}
+
+    try:
+        ctx["farmacias"] = listar_farmacias()
+    except Exception:
+        ctx["farmacias"] = []
+
+    try:
+        # Vendas do mês actual por farmácia
+        hoje = _dt.now()
+        resumo_mes = resumo_por_farmacia_mes(hoje.month, hoje.year)
+        ctx["resumo_mes"] = resumo_mes
+    except Exception:
+        ctx["resumo_mes"] = {}
+
+    try:
+        # Vendas dos últimos 7 dias
+        v7 = vendas_ultimos_dias(dias=7)
+        ctx["vendas_7d"] = {
+            "total": sum(v.get("total", 0) or 0 for v in v7),
+            "numero": len(v7),
+        }
+    except Exception:
+        ctx["vendas_7d"] = {"total": 0, "numero": 0}
+
+    try:
+        # Vendas de hoje
+        v1 = vendas_ultimos_dias(dias=1)
+        ctx["vendas_hoje"] = {
+            "total": sum(v.get("total", 0) or 0 for v in v1),
+            "numero": len(v1),
+        }
+    except Exception:
+        ctx["vendas_hoje"] = {"total": 0, "numero": 0}
+
+    try:
+        # Stock baixo
+        ctx["stock_baixo"] = produtos_estoque_baixo()
+    except Exception:
+        ctx["stock_baixo"] = []
+
+    try:
+        # Orçamentos do mês
+        hoje = _dt.now()
+        ctx["metas"] = metas_activas(hoje.month, hoje.year)
+    except Exception:
+        ctx["metas"] = []
+
+    try:
+        # Top produtos do mês
+        hoje = _dt.now()
+        ctx["top_produtos"] = top_produtos_mes(hoje.month, hoje.year, 5)
+    except Exception:
+        ctx["top_produtos"] = []
+
+    return ctx
+
+
+def _construir_system_prompt(ctx):
+    """Constroi o prompt de sistema com os dados da farmácia."""
+    from datetime import datetime as _dt
+
+    # Farmacias
+    farm_txt = ""
+    for f in ctx.get("farmacias", []):
+        farm_txt += f"- {f.get('nome', '?')} (NIF: {f.get('nif', '-')})\n"
+
+    # Resumo do mês
+    resumo_txt = ""
+    total_mes = 0
+    for fid, dados in ctx.get("resumo_mes", {}).items():
+        nome = dados.get("farmacia", {}).get("nome", "?")
+        total = dados.get("total", 0)
+        num = dados.get("num_vendas", 0)
+        total_mes += total
+        resumo_txt += f"- {nome}: Kz {total:,.0f} ({num} vendas)\n"
+
+    # Stock baixo
+    stock_txt = ""
+    for p in ctx.get("stock_baixo", [])[:10]:
+        stock_txt += f"- {p.get('nome', '?')}: {p.get('estoque_atual', 0)} unidades\n"
+
+    # Metas
+    metas_txt = ""
+    for m in ctx.get("metas", []):
+        metas_txt += f"- {m.get('mes', '?')}: Kz {m.get('orcamento_mes', 0):,.0f}\n"
+
+    # Top produtos
+    top_txt = ""
+    for p in ctx.get("top_produtos", [])[:5]:
+        top_txt += f"- {p.get('nome', '?')}: {p.get('quantidade', 0)} unidades\n"
+
+    hoje = _dt.now().strftime("%d/%m/%Y %H:%M")
+
+    return f"""És o assistente IA do JAM Soft, sistema de gestão de farmácias em Angola.
+
+Data e hora actual: {hoje}
+
+=== DADOS DA REDE ===
+
+FARMÁCIAS ({len(ctx.get('farmacias', []))}):
+{farm_txt or '  (nenhuma)'}
+
+VENDAS HOJE:
+  Total: Kz {ctx.get('vendas_hoje', {}).get('total', 0):,.0f}
+  Número: {ctx.get('vendas_hoje', {}).get('numero', 0)}
+
+VENDAS ÚLTIMOS 7 DIAS:
+  Total: Kz {ctx.get('vendas_7d', {}).get('total', 0):,.0f}
+  Número: {ctx.get('vendas_7d', {}).get('numero', 0)}
+
+VENDAS DO MÊS (por farmácia):
+{resumo_txt or '  (sem dados)'}
+
+TOTAL DO MÊS: Kz {total_mes:,.0f}
+
+METAS/ORÇAMENTOS:
+{metas_txt or '  (sem metas definidas)'}
+
+STOCK BAIXO:
+{stock_txt or '  (tudo OK)'}
+
+TOP PRODUTOS DO MÊS:
+{top_txt or '  (sem dados)'}
+
+=== INSTRUÇÕES ===
+
+- Responde sempre em PORTUGUÊS (Angola)
+- Sê conciso e directo
+- Usa os dados acima
+- Se não souberes algo, diz "não tenho essa informação"
+- Nunca inventes números
+- Formata valores em Kwanza (Kz)
+- Quando fizer sentido, dá sugestões úteis"""
+
+
+def _chat_ia_responder(pergunta, api_key, st_module):
+    """Envia pergunta ao Groq e devolve resposta."""
+    import requests as _req
+
+    ctx = _obter_contexto_ia()
+    system_prompt = _construir_system_prompt(ctx)
+
+    # Histórico recente (últimas 8 mensagens)
+    historico = st_module.session_state.get("chat_historico", [])
+    mensagens = [{"role": "system", "content": system_prompt}]
+    for msg in historico[-8:]:
+        mensagens.append({
+            "role": msg["role"],
+            "content": msg["content"],
+        })
+    mensagens.append({"role": "user", "content": pergunta})
+
+    try:
+        r = _req.post(
+            "https://api.groq.com/openai/v1/chat/completions",
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+            },
+            json={
+                "model": "openai/gpt-oss-120b",
+                "messages": mensagens,
+                "temperature": 0.5,
+                "max_tokens": 800,
+            },
+            timeout=30,
+        )
+
+        if r.status_code != 200:
+            return f"❌ Erro da IA ({r.status_code}). Tenta novamente."
+
+        dados = r.json()
+        return dados["choices"][0]["message"]["content"]
+
+    except Exception as e:
+        return f"❌ Erro ao contactar a IA: {e}"
