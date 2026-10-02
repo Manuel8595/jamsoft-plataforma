@@ -82,12 +82,147 @@ def mostrar_login():
 query_params_cron = st.query_params
 if query_params_cron.get("cron") == "email_semanal":
     token = query_params_cron.get("token", "")
-    TOKEN_ESPERADO = "jamsoft-cron-2026-secreto"  # Podes mudar
+    TOKEN_ESPERADO = "jamsoft-cron-2026-secreto"
 
     if token != TOKEN_ESPERADO:
         st.error("Token inválido")
         st.stop()
 
+    try:
+        import smtplib
+        from email.mime.text import MIMEText
+        from email.mime.multipart import MIMEMultipart
+        from datetime import datetime as _dt, timedelta
+
+        # ─── Config email ───
+        try:
+            EMAIL_REMETENTE = st.secrets.get("EMAIL_REMETENTE", "")
+            EMAIL_SENHA_APP = st.secrets.get("EMAIL_SENHA_APP", "")
+            EMAIL_SMTP = st.secrets.get("EMAIL_SMTP", "smtp.gmail.com")
+            EMAIL_PORTA = int(st.secrets.get("EMAIL_PORTA", "587"))
+        except Exception as e_cfg:
+            st.error(f"Config email em falta nos Secrets: {e_cfg}")
+            st.stop()
+
+        if not EMAIL_REMETENTE or not EMAIL_SENHA_APP:
+            st.error("EMAIL_REMETENTE ou EMAIL_SENHA_APP nao configurados nos Secrets do Streamlit.")
+            st.stop()
+
+        # ─── Obter destinatarios ───
+        from services.supabase_client import _get, listar_farmacias
+        users = _get("plataforma_utilizadores", {
+            "select": "email",
+            "ativo": "eq.true",
+        }) or []
+        destinatarios = [u.get("email") for u in users if u.get("email")]
+
+        if not destinatarios:
+            st.warning("Sem destinatarios registados.")
+            st.stop()
+
+        # ─── Dados da semana ───
+        from services.supabase_client import vendas_ultimos_dias, resumo_por_farmacia
+        vendas_sem = vendas_ultimos_dias(dias=7)
+        total_sem = sum(v.get("total", 0) or 0 for v in vendas_sem)
+        num_vendas = len(vendas_sem)
+
+        resumo = resumo_por_farmacia(dias=7)
+
+        # ─── HTML ───
+        hoje = _dt.now()
+        semana_ini = hoje - timedelta(days=7)
+
+        # Linhas por farmácia
+        linhas_farm = ""
+        for fid, dados in resumo.items():
+            nome = dados.get("farmacia", {}).get("nome", "?")
+            total = dados.get("total", 0)
+            num = dados.get("num_vendas", 0)
+            linhas_farm += f"""
+            <tr>
+                <td style="padding: 8px 0;">{nome}</td>
+                <td style="text-align: right; padding: 8px 0;">
+                    Kz {total:,.0f}
+                </td>
+                <td style="text-align: right; padding: 8px 0;">{num}</td>
+            </tr>
+            """
+
+        html = f"""
+        <html>
+        <body style="font-family: Arial, sans-serif; background: #0f172a; color: #f8fafc; padding: 20px;">
+            <div style="max-width: 700px; margin: 0 auto; background: #1e293b; border-radius: 10px; padding: 30px;">
+                <h1 style="color: #a78bfa; margin-top: 0;">JAM Soft — Resumo Semanal</h1>
+                <p style="color: #94a3b8;">
+                    Período: {semana_ini.strftime('%d/%m/%Y')} a {hoje.strftime('%d/%m/%Y')}
+                </p>
+
+                <hr style="border: 1px solid #334155; margin: 20px 0;">
+
+                <h2 style="color: #10b981;">Total da Semana</h2>
+                <table style="width: 100%; color: #f8fafc;">
+                    <tr>
+                        <td style="padding: 8px 0;">Total vendido:</td>
+                        <td style="text-align: right; font-weight: bold; color: #10b981;">
+                            Kz {total_sem:,.0f}
+                        </td>
+                    </tr>
+                    <tr>
+                        <td style="padding: 8px 0;">Num. vendas:</td>
+                        <td style="text-align: right; font-weight: bold;">
+                            {num_vendas}
+                        </td>
+                    </tr>
+                </table>
+
+                <hr style="border: 1px solid #334155; margin: 20px 0;">
+
+                <h2 style="color: #fbbf24;">Por Farmácia</h2>
+                <table style="width: 100%; color: #f8fafc;">
+                    <tr style="border-bottom: 1px solid #334155;">
+                        <th style="text-align: left; padding: 8px 0;">Farmácia</th>
+                        <th style="text-align: right; padding: 8px 0;">Total</th>
+                        <th style="text-align: right; padding: 8px 0;">Vendas</th>
+                    </tr>
+                    {linhas_farm}
+                </table>
+
+                <hr style="border: 1px solid #334155; margin: 20px 0;">
+
+                <p>
+                    <a href="https://jamsoft-plataforma-nthcjcruax7wmg9rqxr4qz.streamlit.app"
+                       style="background: #7c3aed; color: white; padding: 12px 24px; text-decoration: none; border-radius: 8px; display: inline-block;">
+                        Abrir Plataforma
+                    </a>
+                </p>
+
+                <p style="font-size: 12px; color: #64748b; text-align: center; margin-top: 30px;">
+                    JAM Soft © {hoje.year} — Email automático
+                </p>
+            </div>
+        </body>
+        </html>
+        """
+
+        # ─── Enviar ───
+        msg = MIMEMultipart("alternative")
+        msg["Subject"] = f"JAM Soft — Resumo Semanal ({hoje.strftime('%d/%m/%Y')})"
+        msg["From"] = f"JAM Soft <{EMAIL_REMETENTE}>"
+        msg["To"] = ", ".join(destinatarios)
+        msg.attach(MIMEText(html, "html", "utf-8"))
+
+        with smtplib.SMTP(EMAIL_SMTP, EMAIL_PORTA, timeout=20) as server:
+            server.starttls()
+            server.login(EMAIL_REMETENTE, EMAIL_SENHA_APP)
+            server.sendmail(EMAIL_REMETENTE, destinatarios, msg.as_string())
+
+        st.success(f"✅ Relatório semanal enviado para {len(destinatarios)} destinatários")
+        st.stop()
+
+    except Exception as e:
+        st.error(f"Erro: {e}")
+        st.stop()
+        
     # Aqui executa o envio
     try:
         from sincronizacao import (carregar_sessao, renovar_sessao,
