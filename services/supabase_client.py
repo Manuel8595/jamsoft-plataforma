@@ -767,3 +767,108 @@ def info_plataforma():
         "supabase_url": SUPABASE_URL,
         "data_servidor": datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
     }
+
+
+
+# ============================================================
+# ============ IA: SUGESTAO DE ORCAMENTOS ====================
+# ============================================================
+
+def sugerir_orcamento_farmacia(farmacia_id, mes, ano):
+    """
+    Sugere orçamento para uma farmácia num mês/ano com base em:
+    - Mesmo mês do ano passado
+    - Últimos 3 meses deste ano
+    - Tendência (crescimento/queda)
+    
+    Retorna dict:
+    {
+        "sugestao": float,
+        "base_ano_passado": float,
+        "base_3meses": float,
+        "tendencia": float,        # % por mês
+        "meses_analisados": int,
+        "metodo": str,             # "completo" ou "media_geral"
+    }
+    """
+    from datetime import datetime as _dt, timedelta
+
+    resultado = {
+        "sugestao": 0.0,
+        "base_ano_passado": 0.0,
+        "base_3meses": 0.0,
+        "tendencia": 0.0,
+        "meses_analisados": 0,
+        "metodo": "sem_dados",
+    }
+
+    # ── 1. Mês do ano passado ──
+    vendas_ano_passado = vendas_por_mes(mes, ano - 1, farmacia_id)
+    total_ano_passado = sum(v.get("total", 0) or 0 for v in vendas_ano_passado)
+
+    # ── 2. Últimos 3 meses (antes do mês escolhido) ──
+    meses_3 = []
+    m_temp = mes
+    a_temp = ano
+    for i in range(3):
+        m_temp -= 1
+        if m_temp < 1:
+            m_temp = 12
+            a_temp -= 1
+        vendas_m = vendas_por_mes(m_temp, a_temp, farmacia_id)
+        total_m = sum(v.get("total", 0) or 0 for v in vendas_m)
+        if total_m > 0:
+            meses_3.append(total_m)
+
+    media_3meses = sum(meses_3) / len(meses_3) if meses_3 else 0
+
+    # ── 3. Tendência (crescimento ou queda) ──
+    tendencia = 0.0
+    if len(meses_3) >= 2:
+        # Ordem cronológica (mais antigo primeiro)
+        meses_ord = list(reversed(meses_3))
+        if meses_ord[0] > 0:
+            variacao_total = (meses_ord[-1] - meses_ord[0]) / meses_ord[0]
+            tendencia = variacao_total / (len(meses_ord) - 1) * 100  # % por mês
+            # Limitar entre -50% e +50% por mês
+            tendencia = max(-50, min(50, tendencia))
+
+    # ── 4. Sugestão ──
+    sugestao = 0.0
+    metodo = "sem_dados"
+
+    if total_ano_passado > 0 and media_3meses > 0:
+        # Média ponderada: 40% ano passado + 60% últimos meses
+        base = (total_ano_passado * 0.4) + (media_3meses * 0.6)
+        # Aplicar tendência
+        sugestao = base * (1 + tendencia / 100)
+        metodo = "completo"
+    elif total_ano_passado > 0:
+        sugestao = total_ano_passado
+        metodo = "ano_passado"
+    elif media_3meses > 0:
+        sugestao = media_3meses * (1 + tendencia / 100)
+        metodo = "ultimos_3meses"
+    else:
+        # ── 5. Fallback: média geral das outras farmácias ──
+        todas = listar_farmacias()
+        vendas_todas = []
+        for f in todas:
+            if f["id"] == farmacia_id:
+                continue
+            vm = vendas_por_mes(mes, ano, f["id"])
+            tm = sum(v.get("total", 0) or 0 for v in vm)
+            if tm > 0:
+                vendas_todas.append(tm)
+        if vendas_todas:
+            sugestao = sum(vendas_todas) / len(vendas_todas)
+            metodo = "media_geral"
+
+    resultado["sugestao"] = round(sugestao, 2)
+    resultado["base_ano_passado"] = round(total_ano_passado, 2)
+    resultado["base_3meses"] = round(media_3meses, 2)
+    resultado["tendencia"] = round(tendencia, 2)
+    resultado["meses_analisados"] = len(meses_3)
+    resultado["metodo"] = metodo
+
+    return resultado

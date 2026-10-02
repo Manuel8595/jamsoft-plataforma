@@ -503,6 +503,101 @@ def mostrar_orcamentos():
         with row[4]: st.markdown(estado)
         st.markdown("")
 
+
+    # ============================================================
+    # IA SUGERE ORÇAMENTOS
+    # ============================================================
+    st.markdown("---")
+    st.subheader("🤖 IA Sugere Orcamentos")
+
+    st.caption(
+        "A IA analisa o historico do ano passado, os ultimos 3 meses "
+        "e a tendencia de crescimento/queda para sugerir um orcamento."
+    )
+
+    if st.button("🤖 Gerar Sugestoes da IA", use_container_width=True, key="btn_ia_sugerir"):
+        with st.spinner("A analisar historico..."):
+            from services.supabase_client import sugerir_orcamento_farmacia
+            sugestoes = {}
+            for f in farmacias:
+                sug = sugerir_orcamento_farmacia(f["id"], mes_num, ano_escolhido)
+                sugestoes[f["id"]] = sug
+
+        st.session_state["sugestoes_ia"] = sugestoes
+        st.session_state["sugestoes_mes"] = mes_num
+        st.session_state["sugestoes_ano"] = ano_escolhido
+
+    # Mostrar sugestões se existirem
+    if "sugestoes_ia" in st.session_state:
+        sugestoes = st.session_state["sugestoes_ia"]
+        sug_mes = st.session_state.get("sugestoes_mes")
+        sug_ano = st.session_state.get("sugestoes_ano")
+
+        # Só mostrar se for o mesmo mês/ano escolhido
+        if sug_mes == mes_num and sug_ano == ano_escolhido:
+            st.markdown("")
+            st.markdown("**Sugestoes geradas:**")
+            st.markdown("")
+
+            for f in farmacias:
+                fid = f["id"]
+                sug = sugestoes.get(fid, {})
+                valor = sug.get("sugestao", 0)
+                base_ap = sug.get("base_ano_passado", 0)
+                base_3m = sug.get("base_3meses", 0)
+                tend = sug.get("tendencia", 0)
+                metodo = sug.get("metodo", "")
+
+                with st.container(border=True):
+                    col_a, col_b = st.columns([3, 2])
+
+                    with col_a:
+                        st.markdown(f"**{f['nome']}**")
+
+                        if metodo == "completo":
+                            st.caption(
+                                f"Ano passado: {_fmt_kz(base_ap)} | "
+                                f"Media 3 meses: {_fmt_kz(base_3m)} | "
+                                f"Tendencia: {tend:+.1f}%/mes"
+                            )
+                        elif metodo == "ano_passado":
+                            st.caption(f"Baseado no ano passado: {_fmt_kz(base_ap)}")
+                        elif metodo == "ultimos_3meses":
+                            st.caption(f"Baseado nos ultimos 3 meses: {_fmt_kz(base_3m)}")
+                        elif metodo == "media_geral":
+                            st.caption("Sem historico — usando media das outras farmacias")
+                        else:
+                            st.caption("Sem dados suficientes")
+
+                    with col_b:
+                        st.metric("Sugestao IA", _fmt_kz(valor))
+
+                # Botão para aceitar
+                col_btn1, col_btn2 = st.columns([1, 5])
+                with col_btn1:
+                    if st.button("✅ Aceitar", key=f"aceitar_ia_{fid}"):
+                        if valor > 0:
+                            from services.supabase_client import criar_meta
+                            ok = criar_meta(
+                                mes=mes_num, ano=ano_escolhido,
+                                farmacia_id=fid,
+                                orcamento=valor,
+                                observacoes=f"Sugerido pela IA ({metodo})",
+                                definido_por="IA",
+                            )
+                            if ok:
+                                st.success(f"Guardado: {f['nome']} → {_fmt_kz(valor)}")
+                                st.cache_data.clear()
+                                import time as _t
+                                _t.sleep(1)
+                                st.rerun()
+                            else:
+                                st.error("Erro ao guardar")
+                        else:
+                            st.warning("Valor sugerido e 0")
+
+            st.markdown("---")
+
     # ============================================================
     # DEFINIR / EDITAR
     # ============================================================
