@@ -3,6 +3,7 @@ from config_cloud import CLOUD_ACCESS_ENABLED
 from services.auth import autenticar
 from services.supabase_client import definir_jwt, limpar_jwt
 from pages_admin import mostrar_admin
+from pages_admin import mostrar_diagnostico_remoto
 from pages_config import mostrar_configuracao
 from pages_registo import mostrar_registo
 from dashboard import mostrar_dashboard
@@ -105,6 +106,7 @@ if st.session_state["logado"]:
             "🩺 Diagnostico",
             "⚙️ Definicoes",
             "🔐 Administracao",
+            "🖥️ Diagnostico Remoto",
             "⚙️ Configuracao",
         ]
 
@@ -148,6 +150,8 @@ if st.session_state["logado"]:
         mostrar_definicoes()
     elif pagina == "🔐 Administracao":
         mostrar_admin(user)
+    elif pagina == "🖥️ Diagnostico Remoto":
+        mostrar_diagnostico_remoto(user)
     elif pagina == "⚙️ Configuracao":
         mostrar_configuracao()
 

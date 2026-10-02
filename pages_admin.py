@@ -141,3 +141,120 @@ def mostrar_admin(user):
                             if st.button("❌ Cancelar", key=f"cancela_del_{u.get('id')}"):
                                 st.session_state[f"confirmar_del_{u.get('id')}"] = False
                                 st.rerun()
+
+                                
+
+# ============================================================
+# ============ DIAGNOSTICO REMOTO (estado dos PCs) ===========
+# ============================================================
+
+def mostrar_diagnostico_remoto(user):
+    """Mostra o estado de todos os PCs das farmácias."""
+    import streamlit as st
+    from datetime import datetime, timedelta
+    from services.supabase_client import listar_farmacias, _get
+
+    st.title("🖥️ Diagnostico Remoto")
+    st.caption("Estado dos PCs das farmácias em tempo real")
+    st.markdown("---")
+
+    if st.button("🔄 Actualizar", key="diag_remoto_refresh"):
+        st.cache_data.clear()
+        st.rerun()
+
+    with st.spinner("A carregar..."):
+        farmacias = listar_farmacias()
+
+        # Buscar todos os estados
+        estados = _get("estado_pcs", {"select": "*"}) or []
+
+    # Indexar por farmacia_id
+    estados_por_farm = {}
+    for e in estados:
+        fid = e.get("farmacia_id")
+        if fid:
+            if fid not in estados_por_farm:
+                estados_por_farm[fid] = []
+            estados_por_farm[fid].append(e)
+
+    agora = datetime.now()
+
+    # Contadores
+    online = 0
+    offline = 0
+    nunca = 0
+
+    for f in farmacias:
+        fid = f["id"]
+        estados_f = estados_por_farm.get(fid, [])
+
+        with st.container(border=True):
+            st.markdown(f"### {f['nome']}")
+            st.caption(f"{f.get('endereco', '-')} | NIF: {f.get('nif', '-')}")
+
+            if not estados_f:
+                nunca += 1
+                st.error("🔴 **Nunca comunicou** — PC ainda não enviou dados")
+                continue
+
+            for e in estados_f:
+                ultima_sync_str = e.get("ultima_sync", "")
+                try:
+                    ultima = datetime.fromisoformat(ultima_sync_str.replace("Z", "+00:00"))
+                    segundos_atras = (agora - ultima.replace(tzinfo=None)).total_seconds()
+                    minutos_atras = int(segundos_atras / 60)
+                except Exception:
+                    minutos_atras = 9999
+
+                # Estado
+                if minutos_atras < 5:
+                    estado_emoji = "🟢"
+                    estado_txt = "Online"
+                    online += 1
+                elif minutos_atras < 60:
+                    estado_emoji = "🟡"
+                    estado_txt = f"Sync há {minutos_atras} min"
+                    online += 1
+                else:
+                    horas = minutos_atras // 60
+                    estado_emoji = "🔴"
+                    estado_txt = f"Offline há {horas}h"
+                    offline += 1
+
+                col1, col2, col3, col4 = st.columns(4)
+                with col1:
+                    st.metric("Estado", f"{estado_emoji} {estado_txt}")
+                with col2:
+                    st.metric("Terminal", e.get("terminal_id", "?"))
+                with col3:
+                    st.metric("Versão", e.get("versao", "?"))
+                with col4:
+                    vendas = e.get("vendas_hoje", 0) or 0
+                    st.metric("Vendas hoje", f"Kz {vendas:,.0f}".replace(",", "."))
+
+                col5, col6 = st.columns(2)
+                with col5:
+                    pendentes = e.get("total_pendentes", 0) or 0
+                    if pendentes > 0:
+                        st.warning(f"⚠️ {pendentes} operações pendentes de envio")
+                    else:
+                        st.success("✅ Sem pendentes")
+                with col6:
+                    erro = e.get("ultimo_erro")
+                    if erro:
+                        st.error(f"❌ Último erro: {erro[:60]}")
+                    else:
+                        st.success("✅ Sem erros recentes")
+
+    st.markdown("---")
+    st.subheader("Resumo Geral")
+    c1, c2, c3 = st.columns(3)
+    with c1:
+        st.metric("🟢 Online", f"{online}")
+    with c2:
+        st.metric("🔴 Offline", f"{offline}")
+    with c3:
+        st.metric("⚪ Nunca comunicou", f"{nunca}")
+
+    st.markdown("---")
+    st.caption(f"Actualizado: {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}")
