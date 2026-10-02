@@ -7,7 +7,7 @@ from pages_admin import mostrar_admin, mostrar_diagnostico_remoto
 from pages_secundarias import mostrar_chat_ia
 from pages_config import mostrar_configuracao
 from pages_registo import mostrar_registo
-from plataforma_web.dashboard import mostrar_dashboard
+from dashboard import mostrar_dashboard
 from pages_secundarias import (
     mostrar_ranking,
     mostrar_alertas,
