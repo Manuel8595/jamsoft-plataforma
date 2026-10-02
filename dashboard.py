@@ -22,6 +22,55 @@ def _fmt_kz(valor):
         return "Kz 0"
 
 
+    # ============================================================
+    # IA — ALERTAS AUTOMATICOS
+    # ============================================================
+    st.markdown("---")
+    st.subheader("🤖 Alertas Automaticos (IA)")
+
+    try:
+        from services.supabase_client import analisar_alertas_geral
+        alertas = analisar_alertas_geral()
+
+        if not alertas:
+            st.success("✅ Nenhum alerta. Sistema saudavel.")
+        else:
+            criticos = [a for a in alertas if a.get("nivel") == "CRITICO"]
+            avisos = [a for a in alertas if a.get("nivel") == "AVISO"]
+
+            col1, col2 = st.columns(2)
+            with col1:
+                if criticos:
+                    st.error(f"🔴 **{len(criticos)}** critico(s)")
+                else:
+                    st.success("✅ Sem criticos")
+            with col2:
+                if avisos:
+                    st.warning(f"🟡 **{len(avisos)}** aviso(s)")
+                else:
+                    st.success("✅ Sem avisos")
+
+            st.markdown("")
+
+            if criticos:
+                st.markdown("#### 🔴 Criticos")
+                for a in criticos[:10]:
+                    with st.container(border=True):
+                        st.markdown(f"**{a['titulo']}**")
+                        st.caption(a.get("detalhe", ""))
+                        st.caption(f"💡 **Accao:** {a.get('accao', '')}")
+
+            if avisos:
+                st.markdown("#### 🟡 Avisos")
+                for a in avisos[:10]:
+                    with st.container(border=True):
+                        st.markdown(f"**{a['titulo']}**")
+                        st.caption(a.get("detalhe", ""))
+                        st.caption(f"💡 **Accao:** {a.get('accao', '')}")
+    except Exception as e:
+        st.warning(f"Erro ao analisar alertas: {e}")
+
+
 # ============================================================
 # DASHBOARD
 # ============================================================

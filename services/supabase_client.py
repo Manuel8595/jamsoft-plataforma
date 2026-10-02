@@ -928,3 +928,186 @@ def listar_todas_configs():
     """Retorna todas as configurações (dict: farmacia_id -> config)."""
     r = _get("config_farmacia", {"select": "*"}) or []
     return {c["farmacia_id"]: c for c in r}
+
+
+
+# ============================================================
+# ============ IA: ALERTAS AUTOMATICOS =======================
+# ============================================================
+
+def analisar_alertas_farmacia(farmacia_id, farmacia_nome):
+    """
+    Analisa uma farmácia e devolve lista de alertas.
+    Tipos: CRITICO, AVISO, INFO
+    """
+    from datetime import datetime as _dt, timedelta
+
+    alertas = []
+    hoje = _dt.now().date()
+
+    # ─── 1. Vendas dos últimos 7 dias ───
+    try:
+        vendas_7d = vendas_ultimos_dias(dias=7, farmacia_id=farmacia_id)
+        total_7d = sum(v.get("total", 0) or 0 for v in vendas_7d)
+        num_vendas_7d = len(vendas_7d)
+    except Exception:
+        total_7d = 0
+        num_vendas_7d = 0
+
+    # ─── 2. Média das últimas 4 semanas (28 dias) ───
+    try:
+        vendas_28d = vendas_ultimos_dias(dias=28, farmacia_id=farmacia_id)
+        total_28d = sum(v.get("total", 0) or 0 for v in vendas_28d)
+        media_semanal = total_28d / 4 if total_28d > 0 else 0
+    except Exception:
+        media_semanal = 0
+
+    # Comparar semana actual com média
+    if media_semanal > 0:
+        variacao = ((total_7d - media_semanal) / media_semanal) * 100
+
+        if variacao <= -50:
+            alertas.append({
+                "nivel": "CRITICO",
+                "area": "Vendas",
+                "titulo": f"{farmacia_nome} vendeu {abs(variacao):.0f}% abaixo da média",
+                "detalhe": f"Média: {_fmt_kz_local(media_semanal)}/sem | Esta semana: {_fmt_kz_local(total_7d)}",
+                "accao": "Verificar stock, preços ou ligar ao gerente.",
+            })
+        elif variacao <= -30:
+            alertas.append({
+                "nivel": "AVISO",
+                "area": "Vendas",
+                "titulo": f"{farmacia_nome} vendeu {abs(variacao):.0f}% abaixo da média",
+                "detalhe": f"Média: {_fmt_kz_local(media_semanal)}/sem | Esta semana: {_fmt_kz_local(total_7d)}",
+                "accao": "Acompanhar de perto.",
+            })
+
+    # ─── 3. Última venda ───
+    try:
+        ultima = ultima_venda_por_farmacia().get(farmacia_id, {})
+        dias_atras = ultima.get("dias_atras")
+        if dias_atras is not None:
+            if dias_atras >= 2:
+                alertas.append({
+                    "nivel": "CRITICO",
+                    "area": "Comunicação",
+                    "titulo": f"{farmacia_nome} sem vender há {dias_atras} dias",
+                    "detalhe": f"Última venda: {ultima.get('data', '?')}",
+                    "accao": "Verificar PC, internet ou ligar ao gerente.",
+                })
+            elif dias_atras == 1:
+                alertas.append({
+                    "nivel": "AVISO",
+                    "area": "Comunicação",
+                    "titulo": f"{farmacia_nome} sem vender ontem",
+                    "detalhe": f"Última venda: {ultima.get('data', '?')}",
+                    "accao": "Confirmar se fechou o dia.",
+                })
+    except Exception:
+        pass
+
+    # ─── 4. Lotes a vencer (30 dias) ───
+    try:
+        validade = produtos_validade_proxima(dias=30)
+        venc_loja = [v for v in validade if v.get("farmacia_id") == farmacia_id]
+        if venc_loja:
+            alertas.append({
+                "nivel": "AVISO",
+                "area": "Stock",
+                "titulo": f"{farmacia_nome} tem {len(venc_loja)} lote(s) a vencer em 30 dias",
+                "detalhe": f"Ex: {venc_loja[0].get('produto_nome', '?')}",
+                "accao": "Promover ou devolver ao fornecedor.",
+            })
+    except Exception:
+        pass
+
+    # ─── 5. Lotes vencidos ───
+    try:
+        todos_lotes = listar_lotes(farmacia_id=farmacia_id)
+        vencidos = []
+        for l in todos_lotes:
+            dv_str = l.get("data_validade")
+            if not dv_str:
+                continue
+            try:
+                dv = _dt.strptime(dv_str[:10], "%Y-%m-%d").date()
+                if dv < hoje and (l.get("quantidade") or 0) > 0:
+                    vencidos.append(l)
+            except Exception:
+                continue
+
+        if vencidos:
+            alertas.append({
+                "nivel": "CRITICO",
+                "area": "Stock",
+                "titulo": f"{farmacia_nome} tem {len(vencidos)} lote(s) VENCIDO(S)",
+                "detalhe": f"Ex: {vencidos[0].get('produto_nome', '?')}",
+                "accao": "Retirar do stock imediatamente.",
+            })
+    except Exception:
+        pass
+
+    # ─── 6. Stock crítico ───
+    try:
+        produtos = listar_produtos_stock(farmacia_id=farmacia_id)
+        criticos = [p for p in produtos if (p.get("estoque_atual") or 0) == 0]
+        if criticos:
+            alertas.append({
+                "nivel": "AVISO",
+                "area": "Stock",
+                "titulo": f"{farmacia_nome} tem {len(criticos)} produto(s) em falta",
+                "detalhe": f"Ex: {criticos[0].get('nome', '?')}",
+                "accao": "Encomendar ao fornecedor.",
+            })
+    except Exception:
+        pass
+
+    # ─── 7. Diferenças de caixa (7 dias) ───
+    try:
+        turnos = listar_turnos_periodo(farmacia_id=farmacia_id)
+        for t in turnos[:10]:
+            dif = t.get("diferenca") or 0
+            if abs(dif) >= 50000:
+                tipo = "SOBRA" if dif > 0 else "FALTA"
+                alertas.append({
+                    "nivel": "AVISO",
+                    "area": "Caixa",
+                    "titulo": f"{farmacia_nome} tem {tipo} de {_fmt_kz_local(abs(dif))}",
+                    "detalhe": f"Turno de {t.get('data_abertura', '?')[:10]}",
+                    "accao": "Verificar contagem de notas.",
+                })
+    except Exception:
+        pass
+
+    return alertas
+
+
+def analisar_alertas_geral():
+    """Analisa todas as farmácias e devolve lista agregada."""
+    farmacias = listar_farmacias()
+    todos = []
+
+    for f in farmacias:
+        try:
+            alertas_f = analisar_alertas_farmacia(f["id"], f["nome"])
+            for a in alertas_f:
+                a["farmacia_id"] = f["id"]
+                a["farmacia_nome"] = f["nome"]
+                todos.append(a)
+        except Exception as e:
+            print(f"[Alertas] Erro em {f.get('nome')}: {e}")
+
+    # Ordenar: CRITICO primeiro, depois AVISO
+    ordem = {"CRITICO": 0, "AVISO": 1, "INFO": 2}
+    todos.sort(key=lambda x: ordem.get(x.get("nivel", "INFO"), 99))
+
+    return todos
+
+
+def _fmt_kz_local(valor):
+    """Formatar Kz (cópia local, sem importar de moeda)."""
+    try:
+        return f"Kz {float(valor):,.0f}".replace(",", ".")
+    except Exception:
+        return "Kz 0"
