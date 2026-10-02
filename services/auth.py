@@ -10,6 +10,21 @@ from datetime import datetime, timedelta
 from services.supabase_client import SUPABASE_URL, SUPABASE_KEY
 from config_cloud import CLOUD_ACCESS_ENABLED
 
+
+def _headers():
+    """Headers com JWT se existir, senão chave pública."""
+    try:
+        from services.supabase_client import _headers as _sb_headers
+        return _sb_headers()
+    except Exception:
+        return {
+            "apikey": SUPABASE_KEY,
+            "Authorization": f"Bearer {SUPABASE_KEY}",
+            "Content-Type": "application/json",
+            "Prefer": "return=representation",
+        }
+
+
 HEADERS = {
     "apikey": SUPABASE_KEY,
     "Authorization": f"Bearer {SUPABASE_KEY}",
@@ -43,30 +58,24 @@ def verificar_senha(senha, hash_guardado):
 # ============================================================
 
 def obter_utilizador_por_email(email):
-    if not CLOUD_ACCESS_ENABLED:
-        return None
     url = f"{SUPABASE_URL}/rest/v1/plataforma_utilizadores"
     params = {"email": f"eq.{email}", "select": "*", "limit": "1"}
-    r = requests.get(url, headers=HEADERS, params=params, timeout=10)
+    r = requests.get(url, headers=_headers(), params=params, timeout=10)
     if r.status_code == 200 and r.json():
         return r.json()[0]
     return None
 
 
 def listar_utilizadores():
-    if not CLOUD_ACCESS_ENABLED:
-        return []
     url = f"{SUPABASE_URL}/rest/v1/plataforma_utilizadores"
     params = {"select": "*", "order": "id"}
-    r = requests.get(url, headers=HEADERS, params=params, timeout=10)
+    r = requests.get(url, headers=_headers(), params=params, timeout=10)
     if r.status_code == 200:
         return r.json()
     return []
 
 
 def registar_utilizador(email, senha, nome):
-    if not CLOUD_ACCESS_ENABLED:
-        return False
     senha_hash = gerar_hash(senha)
     url = f"{SUPABASE_URL}/rest/v1/plataforma_utilizadores"
     dados = {
@@ -77,7 +86,7 @@ def registar_utilizador(email, senha, nome):
         "ativo": True,
         "email_verificado": True,
     }
-    r = requests.post(url, headers=HEADERS, json=dados, timeout=10)
+    r = requests.post(url, headers=_headers(), json=dados, timeout=10)
     return r.status_code in (200, 201)
 
 
@@ -117,24 +126,22 @@ def autenticar(email, senha):
 
 
 def alterar_senha(user_id, senha_antiga, senha_nova):
-    if not CLOUD_ACCESS_ENABLED:
-        return False, "A plataforma está temporariamente desactivada por segurança."
     user = None
     for u in listar_utilizadores():
         if u["id"] == user_id:
             user = u
             break
-    
+
     if not user:
         return False, "Utilizador nao encontrado"
-    
+
     if not verificar_senha(senha_antiga, user.get("senha_hash", "")):
         return False, "Senha actual incorrecta"
-    
+
     novo_hash = gerar_hash(senha_nova)
     url = f"{SUPABASE_URL}/rest/v1/plataforma_utilizadores?id=eq.{user_id}"
-    requests.patch(url, headers=HEADERS, json={"senha_hash": novo_hash}, timeout=10)
-    
+    requests.patch(url, headers=_headers(), json={"senha_hash": novo_hash}, timeout=10)
+
     return True, "Senha alterada com sucesso"
 
 
@@ -149,20 +156,32 @@ def gerar_token():
 def criar_convite(email, nome_sugerido=""):
     if not CLOUD_ACCESS_ENABLED:
         return None
+
     token = gerar_token()
     expira = (datetime.now() + timedelta(days=7)).isoformat()
-    
+
     url = f"{SUPABASE_URL}/rest/v1/plataforma_convites"
     dados = {
         "email": email,
         "token": token,
         "nome_sugerido": nome_sugerido,
         "expira_em": expira,
+        "usado": False,
+        "criado_em": datetime.now().isoformat(),
     }
-    
-    r = requests.post(url, headers=HEADERS, json=dados, timeout=10)
-    if r.status_code in (200, 201):
-        return token
+
+    headers = _headers()
+    headers["Prefer"] = "return=representation"
+
+    try:
+        r = requests.post(url, headers=headers, json=dados, timeout=10)
+        if r.status_code in (200, 201):
+            return token
+        else:
+            print(f"[Convite] Erro {r.status_code}: {r.text[:200]}")
+    except Exception as e:
+        print(f"[Convite] Erro: {e}")
+
     return None
 
 
@@ -171,7 +190,7 @@ def listar_convites():
         return []
     url = f"{SUPABASE_URL}/rest/v1/plataforma_convites"
     params = {"select": "*", "order": "id.desc"}
-    r = requests.get(url, headers=HEADERS, params=params, timeout=10)
+    r = requests.get(url, headers=_headers(), params=params, timeout=10)
     if r.status_code == 200:
         return r.json()
     return []
@@ -182,7 +201,7 @@ def obter_convite_por_token(token):
         return None
     url = f"{SUPABASE_URL}/rest/v1/plataforma_convites"
     params = {"token": f"eq.{token}", "select": "*", "limit": "1"}
-    r = requests.get(url, headers=HEADERS, params=params, timeout=10)
+    r = requests.get(url, headers=_headers(), params=params, timeout=10)
     if r.status_code == 200 and r.json():
         return r.json()[0]
     return None
@@ -192,22 +211,22 @@ def marcar_convite_usado(convite_id):
     if not CLOUD_ACCESS_ENABLED:
         return False
     url = f"{SUPABASE_URL}/rest/v1/plataforma_convites?id=eq.{convite_id}"
-    requests.patch(url, headers=HEADERS, json={"usado": True}, timeout=10)
+    requests.patch(url, headers=_headers(), json={"usado": True}, timeout=10)
 
 
 def convite_valido(token):
     conv = obter_convite_por_token(token)
     if not conv:
         return False, "Convite nao encontrado"
-    
+
     if conv.get("usado"):
         return False, "Este convite ja foi utilizado"
-    
+
     try:
         expira = datetime.fromisoformat(conv["expira_em"].replace("Z", "+00:00"))
         if datetime.now(expira.tzinfo) > expira:
             return False, "Este convite expirou"
     except Exception:
         pass
-    
+
     return True, conv

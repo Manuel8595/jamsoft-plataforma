@@ -98,9 +98,46 @@ def mostrar_admin(user):
                     ultimo = ultimo[:16]
 
                 with st.container(border=True):
-                    col_a, col_b = st.columns([3, 1])
+                    col_a, col_b, col_c = st.columns([3, 1, 1])
                     with col_a:
                         st.markdown(f"**{u.get('nome', '?')}** — {u.get('email', '?')}")
                         st.caption(f"Ultimo login: {ultimo}")
                     with col_b:
                         st.markdown(status)
+                    with col_c:
+                        if st.button("🗑️ Eliminar", key=f"del_user_{u.get('id')}"):
+                            st.session_state[f"confirmar_del_{u.get('id')}"] = True
+
+                    # Confirmação de eliminação
+                    if st.session_state.get(f"confirmar_del_{u.get('id')}", False):
+                        st.warning(
+                            f"⚠️ Tem a certeza que quer eliminar "
+                            f"**{u.get('nome', '?')}** ({u.get('email', '?')})?\n\n"
+                            "Esta ação não pode ser revertida."
+                        )
+                        col_conf1, col_conf2 = st.columns(2)
+                        with col_conf1:
+                            if st.button("✅ Sim, eliminar", key=f"confirma_del_{u.get('id')}"):
+                                from services.supabase_client import eliminar_ceo
+                                ok1, ok2 = eliminar_ceo(u.get("id"), u.get("email"))
+
+                                if ok1:
+                                    st.success(f"Eliminado: {u.get('nome', '?')}")
+                                    if not ok2:
+                                        st.warning(
+                                            "⚠️ Aviso: o registo foi eliminado da base de dados, "
+                                            "mas **não foi possível eliminar do Supabase Auth**. "
+                                            "Para remover completamente, vais ao painel Supabase → "
+                                            "Authentication → Users."
+                                        )
+                                    st.session_state[f"confirmar_del_{u.get('id')}"] = False
+                                    st.cache_data.clear()
+                                    import time as _t
+                                    _t.sleep(2)
+                                    st.rerun()
+                                else:
+                                    st.error("Erro ao eliminar. Tenta novamente.")
+                        with col_conf2:
+                            if st.button("❌ Cancelar", key=f"cancela_del_{u.get('id')}"):
+                                st.session_state[f"confirmar_del_{u.get('id')}"] = False
+                                st.rerun()

@@ -1411,3 +1411,53 @@ def sugerir_com_aprendizagem(farmacia_id, mes, ano):
         resultado["num_ajustes"] = padrao["num_ajustes"]
 
     return resultado
+
+
+
+# ============================================================
+# ============ GESTAO DE UTILIZADORES (CEO) ==================
+# ============================================================
+
+def listar_ceos():
+    """Lista todos os CEOs registados (tabela plataforma_utilizadores)."""
+    r = _get("plataforma_utilizadores", {
+        "select": "*",
+        "order": "id",
+    })
+    return r or []
+
+
+def eliminar_ceo(user_id, email):
+    """
+    Elimina um CEO:
+    1. Da tabela plataforma_utilizadores
+    2. Do Supabase Auth (auth.users)
+    """
+    # 1. Eliminar da tabela
+    try:
+        url_tabela = f"{SUPABASE_URL}/rest/v1/plataforma_utilizadores?id=eq.{user_id}"
+        r1 = requests.delete(url_tabela, headers=_headers(), timeout=10)
+        ok_tabela = r1.status_code in (200, 204)
+    except Exception as e:
+        print(f"[Eliminar CEO] Erro tabela: {e}")
+        ok_tabela = False
+
+    # 2. Eliminar do Supabase Auth (usa admin API — só funciona se tiver permissão)
+    # Nota: isto requer service_role key. Se não tiver, só elimina da tabela.
+    ok_auth = True
+    try:
+        url_auth = f"{SUPABASE_URL}/auth/v1/admin/users/{user_id}"
+        headers_admin = {
+            "apikey": SUPABASE_PUBLISHABLE_KEY,
+            "Authorization": f"Bearer {SUPABASE_PUBLISHABLE_KEY}",
+        }
+        r2 = requests.delete(url_auth, headers=headers_admin, timeout=10)
+        # Se der 401/403, não podemos eliminar do Auth (falta service_role)
+        if r2.status_code not in (200, 204):
+            ok_auth = False
+            print(f"[Eliminar CEO] Auth: HTTP {r2.status_code}")
+    except Exception as e:
+        print(f"[Eliminar CEO] Erro auth: {e}")
+        ok_auth = False
+
+    return ok_tabela, ok_auth
