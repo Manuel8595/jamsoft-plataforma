@@ -4,6 +4,8 @@ from config_cloud import CLOUD_ACCESS_ENABLED
 from services.auth import autenticar
 from services.supabase_client import definir_jwt, limpar_jwt
 from pages_admin import mostrar_admin, mostrar_diagnostico_remoto, mostrar_backup
+from pages_ibt import mostrar_ibt
+from pages_ibt import mostrar_ibt
 from pages_secundarias import mostrar_chat_ia
 from pages_config import mostrar_configuracao
 from pages_registo import mostrar_registo
@@ -365,6 +367,7 @@ if st.session_state["logado"]:
             "💬 Chat IA",
             "⚙️ Configuracao",
             "💾 Backup",
+            "🔄 Transferências IBT",
         ]
 
         pagina = st.radio(
@@ -416,6 +419,8 @@ if st.session_state["logado"]:
         mostrar_configuracao()
     elif pagina == "💾 Backup":
         mostrar_backup()
+    elif pagina == "🔄 Transferências IBT":
+        mostrar_ibt()
 
 else:
     mostrar_login()
