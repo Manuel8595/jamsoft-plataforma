@@ -142,7 +142,6 @@ def mostrar_admin(user):
                                 st.session_state[f"confirmar_del_{u.get('id')}"] = False
                                 st.rerun()
 
-                                
 
 # ============================================================
 # ============ DIAGNOSTICO REMOTO (estado dos PCs) ===========
@@ -257,15 +256,22 @@ def mostrar_diagnostico_remoto(user):
         st.metric("⚪ Nunca comunicou", f"{nunca}")
 
     st.markdown("---")
-    st.caption(f"Actualizado: {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}")    
-    
+    st.caption(f"Actualizado: {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}")
+
+
 # ============================================================
 # ============ BACKUP DE DADOS ===============================
 # ============================================================
 
 def mostrar_backup():
     """Página de Backup — CEO."""
-    from backup_service import criar_backup, listar_backups
+    from backup_service import (
+        criar_backup,
+        listar_backups,
+        ler_backup_bytes,
+        ultimo_backup_path,
+        PASTA_BACKUP,
+    )
     from datetime import datetime
 
     st.title("💾 Backup de Dados")
@@ -285,8 +291,32 @@ def mostrar_backup():
             if ok:
                 st.success(msg)
                 st.balloons()
+                st.session_state["backup_recente"] = True
             else:
                 st.error(msg)
+
+    # ─── Botão de download (aparece se houver backups) ───
+    ultimo = ultimo_backup_path()
+    if ultimo and ultimo.exists():
+        st.markdown("---")
+        st.markdown("### 📥 Descarregar o último backup")
+
+        ficheiro_bytes = ler_backup_bytes(ultimo)
+        if ficheiro_bytes:
+            st.download_button(
+                label=f"📥 Descarregar {ultimo.name} ({len(ficheiro_bytes)/1024:.1f} KB)",
+                data=ficheiro_bytes,
+                file_name=ultimo.name,
+                mime="application/octet-stream",
+                use_container_width=True,
+                type="primary",
+            )
+            st.caption(
+                "💡 Clica para descarregar. Guarda no **Google Drive**, **OneDrive** "
+                "ou **pen drive** para teres uma cópia externa segura."
+            )
+        else:
+            st.warning("Não foi possível ler o último backup.")
 
     st.markdown("---")
 
@@ -301,19 +331,30 @@ def mostrar_backup():
         st.markdown("")
         for b in backups:
             with st.container(border=True):
-                c1, c2, c3 = st.columns([3, 2, 2])
+                c1, c2, c3, c4 = st.columns([3, 2, 1.5, 1])
                 with c1:
                     st.markdown(f"**{b['nome']}**")
                 with c2:
                     st.markdown(f"📅 {b['data']}")
                 with c3:
                     st.markdown(f"📦 {b['tamanho_kb']:.1f} KB")
+                with c4:
+                    caminho = PASTA_BACKUP / b["nome"]
+                    conteudo = ler_backup_bytes(caminho)
+                    if conteudo:
+                        st.download_button(
+                            label="📥",
+                            data=conteudo,
+                            file_name=b["nome"],
+                            mime="application/octet-stream",
+                            key=f"dl_{b['nome']}",
+                        )
 
     st.markdown("---")
     st.info(
         "**ℹ️ Sobre o backup**\n\n"
-        "- Local: `C:\\Users\\manue\\farmacia-app\\backups\\`\n"
         "- Encriptação: **AES-256** (Fernet)\n"
         "- Retenção: **30 backups** (rotação automática)\n"
-        "- Ficheiros `.enc` só abrem com a `BACKUP_KEY` do `secrets.toml`"
+        "- Ficheiros `.enc` só abrem com a **BACKUP_KEY** do `secrets.toml`\n"
+        "- ⚠️ **Recomendação:** descarrega e guarda no Google Drive/OneDrive regularmente"
     )
