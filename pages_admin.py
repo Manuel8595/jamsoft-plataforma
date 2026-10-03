@@ -257,4 +257,63 @@ def mostrar_diagnostico_remoto(user):
         st.metric("⚪ Nunca comunicou", f"{nunca}")
 
     st.markdown("---")
-    st.caption(f"Actualizado: {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}")
+    st.caption(f"Actualizado: {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}")    
+    
+# ============================================================
+# ============ BACKUP DE DADOS ===============================
+# ============================================================
+
+def mostrar_backup():
+    """Página de Backup — CEO."""
+    from backup_service import criar_backup, listar_backups
+    from datetime import datetime
+
+    st.title("💾 Backup de Dados")
+    st.caption("Cópia encriptada de todos os dados do Supabase")
+    st.markdown("---")
+
+    # ─── Botão principal ───
+    col1, col2 = st.columns([3, 1])
+    with col1:
+        st.markdown("### Criar backup agora")
+        st.caption("Puxa todos os dados, encripta com AES-256 e guarda localmente")
+    with col2:
+        st.write("")
+        if st.button("💾 Criar Backup", type="primary", use_container_width=True):
+            with st.spinner("A recolher dados do Supabase..."):
+                ok, msg = criar_backup()
+            if ok:
+                st.success(msg)
+                st.balloons()
+            else:
+                st.error(msg)
+
+    st.markdown("---")
+
+    # ─── Lista de backups ───
+    st.markdown("### 📁 Backups existentes")
+    backups = listar_backups()
+
+    if not backups:
+        st.info("Ainda não há backups. Clica em **Criar Backup** acima.")
+    else:
+        st.caption(f"Total: **{len(backups)}** backups | Máximo: **30**")
+        st.markdown("")
+        for b in backups:
+            with st.container(border=True):
+                c1, c2, c3 = st.columns([3, 2, 2])
+                with c1:
+                    st.markdown(f"**{b['nome']}**")
+                with c2:
+                    st.markdown(f"📅 {b['data']}")
+                with c3:
+                    st.markdown(f"📦 {b['tamanho_kb']:.1f} KB")
+
+    st.markdown("---")
+    st.info(
+        "**ℹ️ Sobre o backup**\n\n"
+        "- Local: `C:\\Users\\manue\\farmacia-app\\backups\\`\n"
+        "- Encriptação: **AES-256** (Fernet)\n"
+        "- Retenção: **30 backups** (rotação automática)\n"
+        "- Ficheiros `.enc` só abrem com a `BACKUP_KEY` do `secrets.toml`"
+    )

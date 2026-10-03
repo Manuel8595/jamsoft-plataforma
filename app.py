@@ -3,11 +3,11 @@ from pwa_utils import inject_pwa, mobile_css
 from config_cloud import CLOUD_ACCESS_ENABLED
 from services.auth import autenticar
 from services.supabase_client import definir_jwt, limpar_jwt
-from pages_admin import mostrar_admin, mostrar_diagnostico_remoto
+from pages_admin import mostrar_admin, mostrar_diagnostico_remoto, mostrar_backup
 from pages_secundarias import mostrar_chat_ia
 from pages_config import mostrar_configuracao
 from pages_registo import mostrar_registo
-from dashboard import mostrar_dashboard
+from plataforma_web.dashboard import mostrar_dashboard
 from pages_secundarias import (
     mostrar_ranking,
     mostrar_alertas,
@@ -268,6 +268,7 @@ if st.session_state["logado"]:
             "🖥️ Diagnostico Remoto",
             "💬 Chat IA",
             "⚙️ Configuracao",
+            "💾 Backup",
         ]
 
         pagina = st.radio(
@@ -317,6 +318,8 @@ if st.session_state["logado"]:
         mostrar_chat_ia()
     elif pagina == "⚙️ Configuracao":
         mostrar_configuracao()
+    elif pagina == "💾 Backup":
+        mostrar_backup()
 
 else:
     mostrar_login()
