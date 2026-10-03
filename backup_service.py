@@ -237,3 +237,30 @@ def listar_backups():
         }
         for f in ficheiros
     ]
+
+    
+
+def ler_backup_bytes(caminho_ficheiro):
+    """
+    Lê os bytes de um ficheiro de backup (.enc).
+    Usado para o download pelo browser.
+    """
+    try:
+        with open(caminho_ficheiro, "rb") as f:
+            return f.read()
+    except Exception as e:
+        print(f"[Backup] Erro ao ler {caminho_ficheiro}: {e}")
+        return None
+
+
+def ultimo_backup_path():
+    """Devolve o Path do backup mais recente, ou None."""
+    if not PASTA_BACKUP.exists():
+        return None
+
+    ficheiros = sorted(
+        PASTA_BACKUP.glob("backup_*.enc"),
+        key=lambda p: p.stat().st_mtime,
+        reverse=True,
+    )
+    return ficheiros[0] if ficheiros else None
