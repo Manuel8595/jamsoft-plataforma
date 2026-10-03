@@ -6,6 +6,7 @@ import time
 from datetime import datetime
 
 from services.supabase_client import listar_farmacias, _get
+from services.ibt_pdf import gerar_pdf_ibt
 from services.transferencias_client import (
     ESTADO_RASCUNHO,
     ESTADO_EM_TRANSITO,
@@ -646,6 +647,25 @@ def _ecra_detalhes():
     else:
         st.info("Sem histórico.")
 
+    # ─── Botão de PDF ───
+    st.markdown("---")
+    st.markdown("### 📄 Exportar")
+
+    if st.button("📄 Gerar PDF do Comprovativo", type="primary", use_container_width=True, key="gerar_pdf_btn"):
+        try:
+            with st.spinner("A gerar PDF..."):
+                pdf_bytes = gerar_pdf_ibt(trans, itens, historico)
+
+            st.download_button(
+                label=f"📥 Descarregar {trans.get('referencia', 'IBT')}.pdf",
+                data=pdf_bytes,
+                file_name=f"{trans.get('referencia', 'IBT')}.pdf",
+                mime="application/pdf",
+                use_container_width=True,
+                key="baixar_pdf_btn",
+            )
+        except Exception as e:
+            st.error(f"❌ Erro ao gerar PDF: {e}")
 
 # ============================================================
 # TAB NOVA
