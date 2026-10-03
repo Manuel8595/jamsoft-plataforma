@@ -84,6 +84,99 @@ def mostrar_login():
                 else:
                     st.error("Email ou senha incorrectos.")
 
+# ============================================================
+# ENDPOINT PARA CRON-JOB.ORG (backup diario)
+# ============================================================
+if st.query_params.get("cron") == "backup":
+    token = st.query_params.get("token", "")
+    TOKEN_ESPERADO = "jamsoft-cron-2026-secreto"
+
+    if token != TOKEN_ESPERADO:
+        st.error("Token inválido")
+        st.stop()
+
+    try:
+        import smtplib
+        from email.mime.text import MIMEText
+        from email.mime.multipart import MIMEMultipart
+        from email.mime.base import MIMEBase
+        from email import encoders
+        from datetime import datetime as _dt
+
+        from backup_service import criar_backup, ultimo_backup_path, ler_backup_bytes
+
+        # ─── 1. Criar o backup ───
+        ok, msg = criar_backup()
+
+        if not ok:
+            st.error(f"Erro ao criar backup: {msg}")
+            st.stop()
+
+        # ─── 2. Config email ───
+        EMAIL_REMETENTE = st.secrets.get("EMAIL_REMETENTE", "")
+        EMAIL_SENHA_APP = st.secrets.get("EMAIL_SENHA_APP", "")
+        EMAIL_SMTP = st.secrets.get("EMAIL_SMTP", "smtp.gmail.com")
+        EMAIL_PORTA = int(st.secrets.get("EMAIL_PORTA", "587"))
+        EMAIL_DESTINO = "simaom510@gmail.com"
+
+        if not EMAIL_REMETENTE or not EMAIL_SENHA_APP:
+            st.error("Config email em falta nos Secrets.")
+            st.stop()
+
+        # ─── 3. Preparar mensagem ───
+        hoje = _dt.now()
+        assunto = f"JAM Soft — Backup diário ({hoje.strftime('%d/%m/%Y')})"
+
+        # Corpo do email (versão simples)
+        corpo_texto = f"""
+Backup diário JAM Soft — {hoje.strftime('%d/%m/%Y às %H:%M')}
+
+{msg}
+
+Este email contém o ficheiro de backup em anexo (encriptado AES-256).
+Guarda-o num sítio seguro.
+
+Para abrir o ficheiro, precisas da BACKUP_KEY configurada no secrets.toml.
+
+JAM Soft © {hoje.year}
+"""
+
+        # ─── 4. Construir email com anexo ───
+        msg_email = MIMEMultipart()
+        msg_email["Subject"] = assunto
+        msg_email["From"] = f"JAM Soft <{EMAIL_REMETENTE}>"
+        msg_email["To"] = EMAIL_DESTINO
+
+        msg_email.attach(MIMEText(corpo_texto, "plain", "utf-8"))
+
+        # Anexo do ficheiro .enc
+        ultimo = ultimo_backup_path()
+        if ultimo and ultimo.exists():
+            conteudo = ler_backup_bytes(ultimo)
+            if conteudo:
+                parte = MIMEBase("application", "octet-stream")
+                parte.set_payload(conteudo)
+                encoders.encode_base64(parte)
+                parte.add_header(
+                    "Content-Disposition",
+                    f"attachment; filename={ultimo.name}",
+                )
+                msg_email.attach(parte)
+
+        # ─── 5. Enviar ───
+        with smtplib.SMTP(EMAIL_SMTP, EMAIL_PORTA, timeout=30) as server:
+            server.starttls()
+            server.login(EMAIL_REMETENTE, EMAIL_SENHA_APP)
+            server.sendmail(EMAIL_REMETENTE, [EMAIL_DESTINO], msg_email.as_string())
+
+        st.success(f"✅ Backup diário enviado para {EMAIL_DESTINO}")
+        st.stop()
+
+    except Exception as e:
+        st.error(f"Erro no backup automático: {e}")
+        st.stop()
+
+
 
 # ============================================================
 # ENDPOINT PARA CRON-JOB.ORG (envio semanal de emails)
