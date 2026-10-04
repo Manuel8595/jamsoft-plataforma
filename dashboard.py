@@ -7,7 +7,9 @@ from datetime import datetime
 from services.supabase_client import (
     listar_farmacias,
     resumo_por_farmacia,
+    resumo_por_farmacia_mes,
     vendas_por_dia,
+    metas_activas,
 )
 
 
@@ -114,11 +116,41 @@ def mostrar_dashboard():
 
     st.markdown("---")
 
+    # ─── Orçamento do País ───
     st.subheader("🎯 Orcamento do Pais (este mes)")
-    st.info(
-        f"Vendido este mes: **{_fmt_kz(total_mes)}** "
-        f"(as metas ainda nao estao configuradas)"
-    )
+
+    # Buscar metas do mês actual
+    hoje = datetime.now()
+    metas_mes = metas_activas(hoje.month, hoje.year) or []
+
+    if metas_mes:
+        orcamento_total = sum(m.get("orcamento_mes", 0) or 0 for m in metas_mes)
+        perc = (total_mes / orcamento_total * 100) if orcamento_total > 0 else 0
+
+        col_a, col_b, col_c = st.columns(3)
+        with col_a:
+            st.metric("Meta do Pais", _fmt_kz(orcamento_total))
+        with col_b:
+            st.metric("Vendido", _fmt_kz(total_mes))
+        with col_c:
+            st.metric("Atingido", f"{perc:.1f}%")
+
+        # Barra de progresso
+        st.progress(min(perc / 100, 1.0))
+
+        if perc >= 100:
+            st.success(f"🎉 Meta batida! Superou em {_fmt_kz(total_mes - orcamento_total)}")
+        elif perc >= 70:
+            st.info(f"🟢 Bom progresso! Falta {_fmt_kz(orcamento_total - total_mes)}")
+        elif perc >= 30:
+            st.warning(f"🟡 Falta {_fmt_kz(orcamento_total - total_mes)} para a meta")
+        else:
+            st.error(f"🔴 Falta {_fmt_kz(orcamento_total - total_mes)} para a meta")
+    else:
+        st.info(
+            f"Vendido este mes: **{_fmt_kz(total_mes)}**\n\n"
+            f"_(as metas ainda nao estao configuradas — vai a **Orcamentos** para definir)_"
+        )
 
     st.markdown("---")
 
