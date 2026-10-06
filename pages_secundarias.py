@@ -1210,33 +1210,127 @@ def mostrar_financeiro():
     st.markdown("---")
     st.subheader("Depositos Bancarios")
 
-    dc1, dc2, dc3 = st.columns(3)
-    with dc1: st.metric("Total depositado", _fmt_kz(resumo_d['total_valor']))
-    with dc2: st.metric("Num. depositos", f"{resumo_d['num_total']}")
+    dc1, dc2, dc3, dc4 = st.columns(4)
+    with dc1:
+        st.metric("Total depositado", _fmt_kz(resumo_d['total_valor']))
+    with dc2:
+        st.metric("Num. depositos", f"{resumo_d['num_total']}")
     with dc3:
-        if resumo_d['num_pendentes'] > 0:
-            st.metric("Pendentes aprovacao", f"{resumo_d['num_pendentes']}", delta="Aviso")
+        pend = resumo_d.get('num_pendentes', 0)
+        if pend > 0:
+            st.metric("Aguarda confirmacao", f"{pend}", delta="⚠️")
         else:
-            st.metric("Pendentes aprovacao", "0", delta="OK")
+            st.metric("Aguarda confirmacao", "0", delta="OK")
+    with dc4:
+        regist = resumo_d.get('num_registados', 0)
+        if regist > 0:
+            st.metric("So registados", f"{regist}", delta="⚠️")
+        else:
+            st.metric("So registados", "0", delta="OK")
 
     if depositos:
         st.markdown("---")
-        cols = st.columns([1.2, 2, 2, 1.5, 2, 2])
-        with cols[0]: st.markdown("**Data**")
-        with cols[1]: st.markdown("**Referencia**")
-        with cols[2]: st.markdown("**Banco**")
-        with cols[3]: st.markdown("**Valor**")
-        with cols[4]: st.markdown("**Gerente**")
-        with cols[5]: st.markdown("**Estado**")
-        st.markdown("---")
-        for d in depositos:
-            r = st.columns([1.2, 2, 2, 1.5, 2, 2])
-            with r[0]: st.markdown(d.get("data") or "-")
-            with r[1]: st.markdown(d.get("referencia") or "-")
-            with r[2]: st.markdown(d.get("banco") or "-")
-            with r[3]: st.markdown(f"**{_fmt_kz(d.get('valor') or 0)}**")
-            with r[4]: st.markdown(d.get("gerente_nome") or "-")
-            with r[5]: st.markdown(d.get("estado") or "-")
+
+        # Filtro por estado
+        filtro_estado = st.selectbox(
+            "Filtrar por estado",
+            ["TODOS", "REGISTADO", "AGUARDA_CONFIRMACAO", "CONFIRMADO", "REJEITADO"],
+            key="fin_filtro_dep",
+        )
+
+        if filtro_estado == "TODOS":
+            depositos_filtrados = depositos
+        else:
+            depositos_filtrados = [d for d in depositos if d.get("estado") == filtro_estado]
+
+        st.caption(f"A mostrar **{len(depositos_filtrados)}** de **{len(depositos)}** depositos")
+
+        for d in depositos_filtrados:
+            estado = d.get("estado") or "-"
+            dep_id = d.get("id")
+            referencia = d.get("referencia") or "-"
+            valor = d.get("valor") or 0
+            banco = d.get("banco") or "-"
+            data_dep = d.get("data") or "-"
+            gerente = d.get("gerente_nome") or "-"
+            comprovante = d.get("numero_comprovante") or "-"
+            observacoes = d.get("observacoes") or ""
+
+            # Cores por estado
+            if estado == "CONFIRMADO":
+                st.success(
+                    f"✅ **{referencia}** — {_fmt_kz(valor)} — "
+                    f"{data_dep} — {banco} — Gerente: {gerente}"
+                )
+            elif estado == "AGUARDA_CONFIRMACAO":
+                st.warning(
+                    f"🟡 **{referencia}** — {_fmt_kz(valor)} — "
+                    f"{data_dep} — {banco} — Gerente: {gerente} — "
+                    f"Comprovante: {comprovante}"
+                )
+            elif estado == "REJEITADO":
+                st.error(
+                    f"❌ **{referencia}** — {_fmt_kz(valor)} — "
+                    f"{data_dep} — {banco} — {observacoes}"
+                )
+            else:  # REGISTADO
+                st.info(
+                    f"🔵 **{referencia}** — {_fmt_kz(valor)} — "
+                    f"{data_dep} — {banco} — Gerente: {gerente} — "
+                    f"Comprovante: {comprovante}"
+                )
+
+            # Mostrar botões só para AGUARDA_CONFIRMACAO
+            if estado == "AGUARDA_CONFIRMACAO":
+                col_b1, col_b2, col_b3 = st.columns([1, 1, 3])
+
+                with col_b1:
+                    if st.button("✅ Confirmar", key=f"conf_dep_{dep_id}", type="primary"):
+                        from services.supabase_client import confirmar_deposito
+                        aprovador = "CEO"
+                        if confirmar_deposito(dep_id, aprovador):
+                            st.success(f"Deposito {referencia} confirmado!")
+                            st.cache_data.clear()
+                            import time
+                            time.sleep(1)
+                            st.rerun()
+                        else:
+                            st.error("Erro ao confirmar.")
+
+                with col_b2:
+                    if st.button("❌ Rejeitar", key=f"rej_dep_{dep_id}"):
+                        st.session_state[f"rejeitar_dep_{dep_id}"] = True
+
+                # Formulário de rejeição
+                if st.session_state.get(f"rejeitar_dep_{dep_id}", False):
+                    with st.expander("❌ Motivo da rejeição", expanded=True):
+                        motivo = st.text_area(
+                            "Motivo",
+                            key=f"motivo_{dep_id}",
+                            placeholder="Ex: Nao encontrei este deposito no extrato",
+                        )
+                        col_r1, col_r2 = st.columns(2)
+                        with col_r1:
+                            if st.button("💾 Confirmar rejeicao", key=f"save_rej_{dep_id}"):
+                                if not motivo or len(motivo.strip()) < 3:
+                                    st.warning("Escreve um motivo (min 3 caracteres).")
+                                else:
+                                    from services.supabase_client import rejeitar_deposito
+                                    if rejeitar_deposito(dep_id, motivo.strip(), "CEO"):
+                                        st.error(f"Deposito {referencia} rejeitado.")
+                                        st.session_state[f"rejeitar_dep_{dep_id}"] = False
+                                        st.cache_data.clear()
+                                        import time
+                                        time.sleep(1)
+                                        st.rerun()
+                                    else:
+                                        st.error("Erro ao rejeitar.")
+                        with col_r2:
+                            if st.button("❌ Cancelar", key=f"cancel_rej_{dep_id}"):
+                                st.session_state[f"rejeitar_dep_{dep_id}"] = False
+                                st.rerun()
+
+            st.markdown("")
     else:
         st.info("Sem depositos registados neste periodo.")
 
@@ -1272,7 +1366,6 @@ def mostrar_financeiro():
 
     st.markdown("---")
     st.caption(f"Actualizado: {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}")
-
 
 def mostrar_utilizadores():
     st.title("Utilizadores")

@@ -629,16 +629,43 @@ def listar_depositos(mes=None, ano=None, farmacia_id=None):
 def resumo_depositos(mes=None, ano=None, farmacia_id=None):
     depos = listar_depositos(mes, ano, farmacia_id)
     total = sum(d.get("valor") or 0 for d in depos)
-    pendentes = [d for d in depos if d.get("estado") == "PENDENTE_APROVACAO"]
-    aprovados = [d for d in depos if d.get("estado") == "APROVADO"]
+    pendentes = [d for d in depos if d.get("estado") == "AGUARDA_CONFIRMACAO"]
+    aprovados = [d for d in depos if d.get("estado") == "CONFIRMADO"]
     registados = [d for d in depos if d.get("estado") == "REGISTADO"]
+    rejeitados = [d for d in depos if d.get("estado") == "REJEITADO"]
     return {
         "num_total": len(depos),
         "total_valor": total,
         "num_pendentes": len(pendentes),
         "num_aprovados": len(aprovados),
         "num_registados": len(registados),
+        "num_rejeitados": len(rejeitados),
     }
+
+
+def confirmar_deposito(dep_id, aprovado_por):
+    """CEO confirma um deposito (muda estado para CONFIRMADO)."""
+    from datetime import datetime as _dt
+    agora = _dt.now().isoformat()
+
+    return _patch("depositos", f"id=eq.{dep_id}", {
+        "estado": "CONFIRMADO",
+        "aprovado_por": aprovado_por,
+        "data_aprovacao": agora,
+    })
+
+
+def rejeitar_deposito(dep_id, motivo, aprovado_por):
+    """CEO rejeita um deposito (estado REJEITADO + motivo)."""
+    from datetime import datetime as _dt
+    agora = _dt.now().isoformat()
+
+    return _patch("depositos", f"id=eq.{dep_id}", {
+        "estado": "REJEITADO",
+        "aprovado_por": aprovado_por,
+        "data_aprovacao": agora,
+        "observacoes": f"[REJEITADO] {motivo}",
+    })
 
 
 def listar_movimentos_saldo(mes=None, ano=None, farmacia_id=None):
@@ -769,28 +796,12 @@ def info_plataforma():
     }
 
 
-
 # ============================================================
 # ============ IA: SUGESTAO DE ORCAMENTOS ====================
 # ============================================================
 
 def sugerir_orcamento_farmacia(farmacia_id, mes, ano):
-    """
-    Sugere orçamento para uma farmácia num mês/ano com base em:
-    - Mesmo mês do ano passado
-    - Últimos 3 meses deste ano
-    - Tendência (crescimento/queda)
-    
-    Retorna dict:
-    {
-        "sugestao": float,
-        "base_ano_passado": float,
-        "base_3meses": float,
-        "tendencia": float,        # % por mês
-        "meses_analisados": int,
-        "metodo": str,             # "completo" ou "media_geral"
-    }
-    """
+    """Sugere orçamento para uma farmácia num mês/ano."""
     from datetime import datetime as _dt, timedelta
 
     resultado = {
@@ -806,7 +817,7 @@ def sugerir_orcamento_farmacia(farmacia_id, mes, ano):
     vendas_ano_passado = vendas_por_mes(mes, ano - 1, farmacia_id)
     total_ano_passado = sum(v.get("total", 0) or 0 for v in vendas_ano_passado)
 
-    # ── 2. Últimos 3 meses (antes do mês escolhido) ──
+    # ── 2. Últimos 3 meses ──
     meses_3 = []
     m_temp = mes
     a_temp = ano
@@ -822,15 +833,13 @@ def sugerir_orcamento_farmacia(farmacia_id, mes, ano):
 
     media_3meses = sum(meses_3) / len(meses_3) if meses_3 else 0
 
-    # ── 3. Tendência (crescimento ou queda) ──
+    # ── 3. Tendência ──
     tendencia = 0.0
     if len(meses_3) >= 2:
-        # Ordem cronológica (mais antigo primeiro)
         meses_ord = list(reversed(meses_3))
         if meses_ord[0] > 0:
             variacao_total = (meses_ord[-1] - meses_ord[0]) / meses_ord[0]
-            tendencia = variacao_total / (len(meses_ord) - 1) * 100  # % por mês
-            # Limitar entre -50% e +50% por mês
+            tendencia = variacao_total / (len(meses_ord) - 1) * 100
             tendencia = max(-50, min(50, tendencia))
 
     # ── 4. Sugestão ──
@@ -838,9 +847,7 @@ def sugerir_orcamento_farmacia(farmacia_id, mes, ano):
     metodo = "sem_dados"
 
     if total_ano_passado > 0 and media_3meses > 0:
-        # Média ponderada: 40% ano passado + 60% últimos meses
         base = (total_ano_passado * 0.4) + (media_3meses * 0.6)
-        # Aplicar tendência
         sugestao = base * (1 + tendencia / 100)
         metodo = "completo"
     elif total_ano_passado > 0:
@@ -850,7 +857,6 @@ def sugerir_orcamento_farmacia(farmacia_id, mes, ano):
         sugestao = media_3meses * (1 + tendencia / 100)
         metodo = "ultimos_3meses"
     else:
-        # ── 5. Fallback: média geral das outras farmácias ──
         todas = listar_farmacias()
         vendas_todas = []
         for f in todas:
@@ -872,7 +878,6 @@ def sugerir_orcamento_farmacia(farmacia_id, mes, ano):
     resultado["metodo"] = metodo
 
     return resultado
-
 
 
 # ============================================================
@@ -908,7 +913,6 @@ def guardar_config_farmacia(farmacia_id, dia, semana, mes, ano):
         "updated_at": datetime.now().isoformat(),
     }
 
-    # Verificar se já existe
     r = _get("config_farmacia", {
         "select": "id",
         "farmacia_id": f"eq.{farmacia_id}",
@@ -916,10 +920,8 @@ def guardar_config_farmacia(farmacia_id, dia, semana, mes, ano):
     })
 
     if r:
-        # Actualizar
         return _patch("config_farmacia", f"farmacia_id=eq.{farmacia_id}", dados)
     else:
-        # Criar
         dados["created_at"] = datetime.now().isoformat()
         return _post("config_farmacia", dados)
 
@@ -930,16 +932,12 @@ def listar_todas_configs():
     return {c["farmacia_id"]: c for c in r}
 
 
-
 # ============================================================
 # ============ IA: ALERTAS AUTOMATICOS =======================
 # ============================================================
 
 def analisar_alertas_farmacia(farmacia_id, farmacia_nome):
-    """
-    Analisa uma farmácia e devolve lista de alertas.
-    Tipos: CRITICO, AVISO, INFO
-    """
+    """Analisa uma farmácia e devolve lista de alertas."""
     from datetime import datetime as _dt, timedelta
 
     alertas = []
@@ -954,7 +952,7 @@ def analisar_alertas_farmacia(farmacia_id, farmacia_nome):
         total_7d = 0
         num_vendas_7d = 0
 
-    # ─── 2. Média das últimas 4 semanas (28 dias) ───
+    # ─── 2. Média das últimas 4 semanas ───
     try:
         vendas_28d = vendas_ultimos_dias(dias=28, farmacia_id=farmacia_id)
         total_28d = sum(v.get("total", 0) or 0 for v in vendas_28d)
@@ -962,7 +960,6 @@ def analisar_alertas_farmacia(farmacia_id, farmacia_nome):
     except Exception:
         media_semanal = 0
 
-    # Comparar semana actual com média
     if media_semanal > 0:
         variacao = ((total_7d - media_semanal) / media_semanal) * 100
 
@@ -1098,7 +1095,6 @@ def analisar_alertas_geral():
         except Exception as e:
             print(f"[Alertas] Erro em {f.get('nome')}: {e}")
 
-    # Ordenar: CRITICO primeiro, depois AVISO
     ordem = {"CRITICO": 0, "AVISO": 1, "INFO": 2}
     todos.sort(key=lambda x: ordem.get(x.get("nivel", "INFO"), 99))
 
@@ -1112,22 +1108,18 @@ def _fmt_kz_local(valor):
     except Exception:
         return "Kz 0"
 
-    
 
 # ============================================================
 # ============ RENTABILIDADE E SUGESTOES IA ==================
 # ============================================================
 
 def calcular_rentabilidade_farmacia(farmacia_id, ano):
-    """
-    Calcula rentabilidade de uma farmácia no ano + ciclos de 3 meses.
-    Retorna dict com: margem, lucro, custo, ticket, sugestões.
-    """
+    """Calcula rentabilidade de uma farmácia no ano + ciclos de 3 meses."""
     from datetime import datetime as _dt
 
     resultado = {
         "ano": ano,
-        "ciclos": {},          # {Q1: {...}, Q2: {...}, Q3: {...}, Q4: {...}}
+        "ciclos": {},
         "ano_total": {
             "vendas": 0.0,
             "custo": 0.0,
@@ -1139,13 +1131,10 @@ def calcular_rentabilidade_farmacia(farmacia_id, ano):
         "sugestoes": [],
     }
 
-    # ─── 1. Vendas por mês ───
     vendas_por_mes_cache = {}
     for m in range(1, 13):
         vendas_por_mes_cache[m] = vendas_por_mes(m, ano, farmacia_id)
 
-    # ─── 2. Calcular totais por ciclo (3 meses) ───
-    # Q1: Jan-Mar | Q2: Abr-Jun | Q3: Jul-Set | Q4: Out-Dez
     ciclos = {
         "Q1 (Jan-Mar)": [1, 2, 3],
         "Q2 (Abr-Jun)": [4, 5, 6],
@@ -1168,7 +1157,6 @@ def calcular_rentabilidade_farmacia(farmacia_id, ano):
             total_ciclo_vendas += vendas_m_total
             total_ciclo_num += len(vendas_m)
 
-            # Calcular custo dos produtos vendidos no mês
             for v in vendas_m:
                 custo_venda = _calcular_custo_venda(v.get("id"))
                 total_ciclo_custo += custo_venda
@@ -1203,10 +1191,8 @@ def calcular_rentabilidade_farmacia(farmacia_id, ano):
         "ticket_medio": round(ticket_ano, 2),
     }
 
-    # ─── 3. Sugestões IA ───
     sugestoes = []
 
-    # Margem baixa
     if margem_ano < 20 and total_ano_vendas > 0:
         sugestoes.append({
             "nivel": "CRITICO",
@@ -1222,7 +1208,6 @@ def calcular_rentabilidade_farmacia(farmacia_id, ano):
             "accao": "Promover produtos com margem alta.",
         })
 
-    # Ticket médio baixo
     if 0 < ticket_ano < 300:
         sugestoes.append({
             "nivel": "AVISO",
@@ -1231,7 +1216,6 @@ def calcular_rentabilidade_farmacia(farmacia_id, ano):
             "accao": "Sugerir produtos complementares no PDV.",
         })
 
-    # Ciclo em queda
     ciclos_ord = ["Q1 (Jan-Mar)", "Q2 (Abr-Jun)", "Q3 (Jul-Set)", "Q4 (Out-Dez)"]
     valores_ciclos = [resultado["ciclos"][c]["vendas"] for c in ciclos_ord]
     valores_nao_zero = [v for v in valores_ciclos if v > 0]
@@ -1245,7 +1229,6 @@ def calcular_rentabilidade_farmacia(farmacia_id, ano):
                 "accao": "Investigar motivo — stock, preços, concorrência.",
             })
 
-    # Stock crítico
     try:
         produtos = listar_produtos_stock(farmacia_id=farmacia_id)
         sem_stock = [p for p in produtos if (p.get("estoque_atual") or 0) == 0]
@@ -1259,7 +1242,6 @@ def calcular_rentabilidade_farmacia(farmacia_id, ano):
     except Exception:
         pass
 
-    # Sem vendas
     if total_ano_vendas == 0:
         sugestoes.append({
             "nivel": "INFO",
@@ -1278,7 +1260,6 @@ def _calcular_custo_venda(venda_id):
     if not venda_id:
         return 0.0
 
-    # Buscar itens da venda
     itens = _get("itens_venda", {
         "select": "produto_id,quantidade",
         "venda_id": f"eq.{venda_id}",
@@ -1291,7 +1272,6 @@ def _calcular_custo_venda(venda_id):
         if not pid:
             continue
 
-        # Buscar preço de custo
         prod = _get("produtos", {
             "select": "preco_custo",
             "id": f"eq.{pid}",
@@ -1318,19 +1298,14 @@ def calcular_rentabilidade_geral(ano):
 
     return resultado
 
-    
 
 # ============================================================
 # ============ IA: APRENDIZAGEM COM AJUSTES DO CEO ===========
 # ============================================================
 
 def guardar_ajuste_ceo(farmacia_id, mes, ano, sugestao_ia, valor_aceito, notas=""):
-    """
-    Guarda um ajuste do CEO.
-    A IA usa isto para aprender padrões.
-    """
+    """Guarda um ajuste do CEO."""
     try:
-        # Calcular % de diferença
         diferenca = 0.0
         if sugestao_ia > 0:
             diferenca = ((valor_aceito - sugestao_ia) / sugestao_ia) * 100
@@ -1352,10 +1327,7 @@ def guardar_ajuste_ceo(farmacia_id, mes, ano, sugestao_ia, valor_aceito, notas="
 
 
 def obter_padrao_ajuste(farmacia_id, mes):
-    """
-    Calcula o padrão de ajuste para uma farmácia e mês.
-    Retorna % média de ajuste com base em ajustes anteriores.
-    """
+    """Calcula o padrão de ajuste para uma farmácia e mês."""
     try:
         r = _get("ajustes_ceo", {
             "select": "diferenca_pct",
@@ -1370,7 +1342,6 @@ def obter_padrao_ajuste(farmacia_id, mes):
         if not valores:
             return None
 
-        # Média
         media = sum(valores) / len(valores)
         return {
             "media_pct": round(media, 2),
@@ -1382,14 +1353,8 @@ def obter_padrao_ajuste(farmacia_id, mes):
 
 
 def sugerir_com_aprendizagem(farmacia_id, mes, ano):
-    """
-    Combina a sugestão base com o padrão aprendido.
-    Retorna dict com sugestão ajustada.
-    """
-    # Sugestão base
+    """Combina a sugestão base com o padrão aprendido."""
     base = sugerir_orcamento_farmacia(farmacia_id, mes, ano)
-
-    # Padrão aprendido
     padrao = obter_padrao_ajuste(farmacia_id, mes)
 
     resultado = {
@@ -1413,7 +1378,6 @@ def sugerir_com_aprendizagem(farmacia_id, mes, ano):
     return resultado
 
 
-
 # ============================================================
 # ============ GESTAO DE UTILIZADORES (CEO) ==================
 # ============================================================
@@ -1428,12 +1392,7 @@ def listar_ceos():
 
 
 def eliminar_ceo(user_id, email):
-    """
-    Elimina um CEO:
-    1. Da tabela plataforma_utilizadores
-    2. Do Supabase Auth (auth.users)
-    """
-    # 1. Eliminar da tabela
+    """Elimina um CEO (tabela + auth)."""
     try:
         url_tabela = f"{SUPABASE_URL}/rest/v1/plataforma_utilizadores?id=eq.{user_id}"
         r1 = requests.delete(url_tabela, headers=_headers(), timeout=10)
@@ -1442,8 +1401,6 @@ def eliminar_ceo(user_id, email):
         print(f"[Eliminar CEO] Erro tabela: {e}")
         ok_tabela = False
 
-    # 2. Eliminar do Supabase Auth (usa admin API — só funciona se tiver permissão)
-    # Nota: isto requer service_role key. Se não tiver, só elimina da tabela.
     ok_auth = True
     try:
         url_auth = f"{SUPABASE_URL}/auth/v1/admin/users/{user_id}"
@@ -1452,7 +1409,6 @@ def eliminar_ceo(user_id, email):
             "Authorization": f"Bearer {SUPABASE_PUBLISHABLE_KEY}",
         }
         r2 = requests.delete(url_auth, headers=headers_admin, timeout=10)
-        # Se der 401/403, não podemos eliminar do Auth (falta service_role)
         if r2.status_code not in (200, 204):
             ok_auth = False
             print(f"[Eliminar CEO] Auth: HTTP {r2.status_code}")
