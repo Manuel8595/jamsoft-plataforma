@@ -270,11 +270,25 @@ if query_params_cron.get("cron") == "email_semanal":
             </tr>
             """
 
+                # ─── Logo em base64 ───
+        LOGO_B64 = ""
+        try:
+            from pathlib import Path
+            caminho_logo_b64 = Path(__file__).parent / "logo_email_base64.txt"
+            if caminho_logo_b64.exists():
+                LOGO_B64 = caminho_logo_b64.read_text().strip()
+        except Exception as e_logo:
+            print(f"[Email] Aviso logo: {e_logo}")
+            
         html = f"""
         <html>
         <body style="font-family: Arial, sans-serif; background: #0f172a; color: #f8fafc; padding: 20px;">
             <div style="max-width: 700px; margin: 0 auto; background: #1e293b; border-radius: 10px; padding: 30px;">
-                <h1 style="color: #a78bfa; margin-top: 0;">JAM Soft — Resumo Semanal</h1>
+                <div style="text-align: center; margin-bottom: 15px;">
+                    <img src="data:image/png;base64,{LOGO_B64}" 
+                         alt="JAM Soft" 
+                         style="max-width: 280px; height: auto;">
+                </div>
                 <p style="color: #94a3b8;">
                     Período: {semana_ini.strftime('%d/%m/%Y')} a {hoje.strftime('%d/%m/%Y')}
                 </p>
