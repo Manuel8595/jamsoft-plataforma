@@ -291,6 +291,8 @@ def mostrar_alertas():
         estoque_baixo = produtos_estoque_baixo()
         turnos_dif = turnos_com_diferenca(dias=7)
         metas = metas_activas()
+        # Depositos pendentes (mes actual)
+        depositos_pendentes = listar_depositos()
 
     criticos = []
     avisos = []
@@ -372,6 +374,62 @@ def mostrar_alertas():
             "accao": "Encomendar.",
         })
 
+
+    # ─── Depósitos pendentes ───
+    if depositos_pendentes:
+        from datetime import datetime as _dt_alert
+
+        registados_antigos = []
+        aguarda_antigos = []
+
+        for d in depositos_pendentes:
+            estado = d.get("estado") or ""
+            data_str = d.get("data") or ""
+
+            if not data_str:
+                continue
+
+            try:
+                data_dep = _dt_alert.strptime(data_str[:10], "%Y-%m-%d")
+                dias_atras = (_dt_alert.now() - data_dep).days
+            except Exception:
+                continue
+
+            ref = d.get("referencia") or "?"
+            valor = d.get("valor") or 0
+            banco = d.get("banco") or "?"
+
+            if estado == "REGISTADO" and dias_atras >= 1:
+                registados_antigos.append({
+                    "ref": ref,
+                    "valor": valor,
+                    "banco": banco,
+                    "dias": dias_atras,
+                })
+            elif estado == "AGUARDA_CONFIRMACAO" and dias_atras >= 3:
+                aguarda_antigos.append({
+                    "ref": ref,
+                    "valor": valor,
+                    "banco": banco,
+                    "dias": dias_atras,
+                })
+
+        if registados_antigos:
+            for r in registados_antigos[:3]:
+                avisos.append({
+                    "titulo": f"Deposito {r['ref']} nao foi registado no banco",
+                    "detalhe": f"Kz {r['valor']:,.0f} | {r['banco']} | {r['dias']} dia(s) atras",
+                    "accao": "Gerente deve registar comprovante.",
+                })
+
+        if aguarda_antigos:
+            for r in aguarda_antigos[:3]:
+                criticos.append({
+                    "titulo": f"Deposito {r['ref']} aguarda confirmacao ha {r['dias']} dias",
+                    "detalhe": f"Kz {r['valor']:,.0f} | {r['banco']}",
+                    "accao": "CEO deve confirmar no extrato bancario.",
+                })
+                
     st.subheader("Resumo")
     c1, c2, c3 = st.columns(3)
     with c1:
