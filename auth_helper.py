@@ -1,18 +1,18 @@
 """
-Helpers de sessao para a plataforma.
+Helpers de sessão para a plataforma.
 """
 
 import streamlit as st
 
 
 def iniciar_sessao(utilizador):
-    """Grava o utilizador na sessao."""
+    """Grava o utilizador na sessão."""
     st.session_state["logado"] = True
     st.session_state["utilizador"] = utilizador
 
 
 def terminar_sessao():
-    """Limpa a sessao."""
+    """Limpa a sessão."""
     st.session_state["logado"] = False
     st.session_state["utilizador"] = None
 
@@ -30,6 +30,6 @@ def utilizador_actual():
 def exigir_login():
     """Bloqueia se nao estiver logado. Devolve o utilizador."""
     if not esta_logado():
-        st.warning("Sessao expirada. Faz login.")
+        st.warning("Sessão expirada. Faz login.")
         st.stop()
     return utilizador_actual()

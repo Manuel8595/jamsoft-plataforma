@@ -13,7 +13,7 @@ from services.supabase_client import _get
 TABELAS = [
     "farmacias", "vendas", "itens_venda", "produtos", "perdas",
     "compras", "clientes", "facturas", "devolucoes", "turnos_caixa",
-    "dias_operacao", "lotes", "metas_farmacia", "depositos",
+    "dias_operação", "lotes", "metas_farmacia", "depositos",
     "saldo_farmacia", "utilizadores", "categorias", "fornecedores",
     "plataforma_utilizadores", "plataforma_convites",
 ]

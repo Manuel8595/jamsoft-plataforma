@@ -34,7 +34,7 @@ def mostrar_registo(token):
     st.info(f"Convite valido para: **{email}**")
     
     if st.session_state.get("logado"):
-        st.warning("Ja estas logado. Termina sessao primeiro.")
+        st.warning("Ja estas logado. Termina sessão primeiro.")
         return
     
     col1, col2, col3 = st.columns([1, 2, 1])
