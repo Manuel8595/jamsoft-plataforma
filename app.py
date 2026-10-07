@@ -49,10 +49,30 @@ if "pagina" not in st.session_state:
 
 
 def mostrar_login():
+    # ─── Cabeçalho com logo ───
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col2:
+        try:
+            from pathlib import Path
+            caminho_logo = Path(__file__).parent / "logos" / "logo_horizontal_medio.png"
+            if caminho_logo.exists():
+                st.image(str(caminho_logo), use_container_width=True)
+            else:
+                st.markdown("""
+                    <div style='text-align: center;'>
+                        <h1>💊 JAM Soft</h1>
+                    </div>
+                """, unsafe_allow_html=True)
+        except Exception:
+            st.markdown("""
+                <div style='text-align: center;'>
+                    <h1>💊 JAM Soft</h1>
+                </div>
+            """, unsafe_allow_html=True)
+
     st.markdown("""
-        <div style='text-align: center; padding: 20px;'>
-            <h1>💊 JAM Soft</h1>
-            <p style='color: #94a3b8;'>Plataforma de Monitorizacao</p>
+        <div style='text-align: center; padding: 5px 0 15px 0;'>
+            <p style='color: #94a3b8; margin: 0;'>Plataforma de Monitorizacao</p>
             <hr style='border-color: #334155;'>
         </div>
     """, unsafe_allow_html=True)
@@ -84,7 +104,6 @@ def mostrar_login():
                     st.rerun()
                 else:
                     st.error("Email ou senha incorrectos.")
-
 # ============================================================
 # ENDPOINT PARA CRON-JOB.ORG (backup diario)
 # ============================================================

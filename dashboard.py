@@ -78,8 +78,22 @@ def _fmt_kz(valor):
 # ============================================================
 
 def mostrar_dashboard():
-    st.title("💊 JAM Soft — Angola")
-    st.caption(f"📅 {datetime.now().strftime('%d/%m/%Y %H:%M')} • Resumo do Pais")
+    # ─── Cabeçalho com logo ───
+    col_logo, col_info = st.columns([1, 2])
+    with col_logo:
+        try:
+            from pathlib import Path
+            caminho_logo = Path(__file__).parent / "logos" / "logo_horizontal_medio.png"
+            if caminho_logo.exists():
+                st.image(str(caminho_logo), width=280)
+            else:
+                st.title("💊 JAM Soft")
+        except Exception:
+            st.title("💊 JAM Soft")
+
+    with col_info:
+        st.markdown(f"### Resumo do Pais")
+        st.caption(f"📅 {datetime.now().strftime('%d/%m/%Y %H:%M')}")
 
     st.markdown("---")
 
