@@ -28,7 +28,9 @@ _SW_B64 = "Ly8gU2VydmljZSBXb3JrZXIg4oCUIEpBTSBTb2Z0IFBXQQ0KY29uc3QgQ0FDSEVfTkFNR
 
 
 def inject_pwa():
-    """Injeta manifest + service worker via st.components.v1.html (executa JS)."""
+    """Injeta PWA + fecha sidebar em mobile."""
+    import streamlit.components.v1 as components
+
     html = f"""
     <script>
     (function() {{
@@ -68,18 +70,9 @@ def inject_pwa():
                 parentDoc.head.appendChild(link);
             }}
             link.href = manifestURL;
-            console.log("[PWA] Manifest OK:", manifestURL);
+            console.log("[PWA] Manifest OK");
 
-            // 2. Apple touch icon
-            let apple = parentDoc.querySelector('link[rel="apple-touch-icon"]');
-            if (!apple) {{
-                apple = parentDoc.createElement("link");
-                apple.rel = "apple-touch-icon";
-                parentDoc.head.appendChild(apple);
-            }}
-            apple.href = "data:image/png;base64,{_ICON192_B64}";
-
-            // 3. Favicon
+            // 2. Favicon
             let favicon = parentDoc.querySelector('link[rel="icon"]');
             if (!favicon) {{
                 favicon = parentDoc.createElement("link");
@@ -89,74 +82,100 @@ def inject_pwa():
             }}
             favicon.href = "data:image/png;base64,{_ICON192_B64}";
 
-            // 4. Theme color
-            let theme = parentDoc.querySelector('meta[name="theme-color"]');
-            if (!theme) {{
-                theme = parentDoc.createElement("meta");
-                theme.name = "theme-color";
-                theme.content = "#7c3aed";
-                parentDoc.head.appendChild(theme);
-            }}
-
-            // 5. Service Worker via Blob (só em HTTPS)
-            if ("serviceWorker" in navigator && location.protocol === "https:") {{
-                const swB64 = "{_SW_B64}";
-                const swBytes = Uint8Array.from(atob(swB64), c => c.charCodeAt(0));
-                const swText = new TextDecoder("utf-8").decode(swBytes);
-                const swBlob = new Blob([swText], {{type: "application/javascript"}});
-                const swURL = URL.createObjectURL(swBlob);
-
-                navigator.serviceWorker.register(swURL)
-                    .then(function(reg) {{
-                        console.log("[PWA] SW registado:", reg.scope);
-                    }})
-                    .catch(function(err) {{
-                        console.warn("[PWA] SW erro:", err.message);
-                    }});
-            }} else {{
-                console.warn("[PWA] SW ignorado (precisa HTTPS):", location.protocol);
+            // 3. FECHAR SIDEBAR EM MOBILE
+            const isMobile = window.parent.innerWidth <= 768;
+            if (isMobile) {{
+                setTimeout(function() {{
+                    const sidebar = parentDoc.querySelector('section[data-testid="stSidebar"]');
+                    if (sidebar) {{
+                        // Procurar botão de fechar
+                        const closeBtn = sidebar.querySelector('button[kind="header"]') 
+                                      || sidebar.querySelector('button[aria-label="Close sidebar"]')
+                                      || parentDoc.querySelector('[data-testid="collapsedControl"] button');
+                        if (closeBtn) {{
+                            closeBtn.click();
+                            console.log("[PWA] Sidebar fechada em mobile");
+                        }}
+                    }}
+                }}, 500);
             }}
 
         }} catch (e) {{
-            console.error("[PWA] Erro geral:", e);
+            console.error("[PWA] Erro:", e);
         }}
     }})();
     </script>
     """
-
     components.html(html, height=0, width=0)
 
-
 def mobile_css():
-    """CSS para melhorar visualização no telemóvel."""
+    """CSS responsivo para mobile (telemóvel)."""
     st.markdown(
         """
         <style>
+        /* ═══════════════════════════════════════════════
+           MOBILE — ecrãs até 768px
+           ═══════════════════════════════════════════════ */
         @media (max-width: 768px) {
+
+            /* Padding geral reduzido */
+            .block-container {
+                padding-top: 1rem !important;
+                padding-left: 0.8rem !important;
+                padding-right: 0.8rem !important;
+                padding-bottom: 1rem !important;
+                max-width: 100% !important;
+            }
+
+            /* Colunas empilham */
             [data-testid="column"] {
                 min-width: 100% !important;
                 flex: 1 1 100% !important;
+                margin-bottom: 0.5rem !important;
             }
 
+            /* Botões maiores para tocar */
             .stButton > button {
                 width: 100% !important;
-                padding: 12px !important;
-                font-size: 16px !important;
+                padding: 14px 12px !important;
+                font-size: 15px !important;
+                min-height: 48px !important;
             }
 
+            /* Métricas maiores */
             [data-testid="stMetricValue"] {
                 font-size: 22px !important;
             }
+            [data-testid="stMetricLabel"] {
+                font-size: 12px !important;
+            }
 
+            /* Sidebar mais estreita em mobile (não tapa) */
+            section[data-testid="stSidebar"] {
+                width: 75% !important;
+                min-width: 75% !important;
+                max-width: 75% !important;
+            }
+
+            /* Títulos menores */
+            h1 { font-size: 22px !important; }
+            h2 { font-size: 18px !important; }
+            h3 { font-size: 16px !important; }
+
+            /* Tabelas com scroll */
+            [data-testid="stDataFrame"] {
+                overflow-x: auto !important;
+            }
+
+            /* Imagens responsivas */
+            img {
+                max-width: 100% !important;
+                height: auto !important;
+            }
+
+            /* Esconder menu do Streamlit */
             #MainMenu {visibility: hidden;}
             footer {visibility: hidden;}
-            header {visibility: hidden;}
-
-            .block-container {
-                padding-top: 2rem !important;
-                padding-left: 1rem !important;
-                padding-right: 1rem !important;
-            }
         }
 
         footer {visibility: hidden;}

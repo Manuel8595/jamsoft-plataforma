@@ -5,7 +5,6 @@ from services.auth import autenticar
 from services.supabase_client import definir_jwt, limpar_jwt
 from pages_admin import mostrar_admin, mostrar_diagnostico_remoto, mostrar_backup
 from pages_ibt import mostrar_ibt
-from pages_ibt import mostrar_ibt
 from pages_secundarias import mostrar_chat_ia
 from pages_config import mostrar_configuracao
 from pages_registo import mostrar_registo
@@ -30,10 +29,10 @@ st.set_page_config(
     page_title="JAM Soft - Monitorizacao",
     page_icon="static/icon-192.png",
     layout="wide",
-    initial_sidebar_state="expanded",
+    initial_sidebar_state="collapsed",
 )
 
-# Activar PWA (app no telemóvel)
+# ─── ACTIVAR PWA + CSS MOBILE ───
 inject_pwa()
 mobile_css()
 
