@@ -15,3 +15,4 @@ Dashboard central para monitorizar as farmacias da rede JAM Soft.
 - Streamlit (dashboard)
 - Supabase (base de dados na nuvem)
 - Python 3.12
+# Actualizacao 2026-10-10 22:35
