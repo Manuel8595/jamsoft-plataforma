@@ -16,3 +16,5 @@ Dashboard central para monitorizar as farmacias da rede JAM Soft.
 - Supabase (base de dados na nuvem)
 - Python 3.12
 # Actualizacao 2026-10-10 22:35
+
+# Force redeploy 2026-10-10 22:37:06
