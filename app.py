@@ -42,6 +42,42 @@ if "utilizador" not in st.session_state:
     st.session_state["utilizador"] = None
 if "pagina" not in st.session_state:
     st.session_state["pagina"] = "📊 Resumo do País"
+
+st.markdown("""
+<style>
+    @keyframes float {
+        0%, 100% { transform: translateY(0px); }
+        50% { transform: translateY(-8px); }
+    }
+    .logo-animado {
+        animation: float 3s ease-in-out infinite;
+        filter: drop-shadow(0 0 20px rgba(124, 58, 237, 0.4));
+        width: 180px !important;
+        max-width: 180px !important;
+        height: auto !important;
+    }
+    
+    /* Mobile: logo mais pequeno */
+    @media (max-width: 768px) {
+        .logo-animado {
+            width: 120px !important;
+            max-width: 120px !important;
+        }
+    }
+    
+    /* Tablet */
+    @media (min-width: 769px) and (max-width: 1024px) {
+        .logo-animado {
+            max-width: 180px;
+        }
+    }
+    .logo-container {
+        text-align: center;
+        margin-bottom: 15px;
+    }
+</style>
+""", unsafe_allow_html=True)
+
 def mostrar_login():
     # ─── Cabeçalho com logo ───
     col1, col2, col3 = st.columns([1, 2, 1])
@@ -50,7 +86,15 @@ def mostrar_login():
             from pathlib import Path
             caminho_logo = Path(__file__).parent / "logos" / "JamLogo_transparente.png"
             if caminho_logo.exists():
-                st.image(str(caminho_logo), width=280)
+                import base64
+                with open(caminho_logo, "rb") as f_logo:
+                    logo_b64 = base64.b64encode(f_logo.read()).decode()
+                st.markdown(
+                    f'''<div class="logo-container">
+                        <img src="data:image/png;base64,{logo_b64}" class="logo-animado" />
+                    </div>''',
+                    unsafe_allow_html=True
+                )
             else:
                 st.markdown("""
                     <div style='text-align: center;'>
