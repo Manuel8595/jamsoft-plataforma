@@ -2,14 +2,10 @@
 Verifica o que esta sincronizado no Supabase.
 Uso: python verificar_supabase.py
 """
-
 import sys
 import os
 sys.path.insert(0, os.path.dirname(__file__))
-
 from services.supabase_client import _get
-
-
 TABELAS = [
     "farmacias", "vendas", "itens_venda", "produtos", "perdas",
     "compras", "clientes", "facturas", "devolucoes", "turnos_caixa",
@@ -17,15 +13,12 @@ TABELAS = [
     "saldo_farmacia", "utilizadores", "categorias", "fornecedores",
     "plataforma_utilizadores", "plataforma_convites",
 ]
-
 print("=" * 60)
 print("VERIFICACAO DO SUPABASE")
 print("=" * 60)
 print()
-
 existem = []
 nao_existem = []
-
 for t in TABELAS:
     try:
         r = _get(t, {"select": "id", "limit": "1"})
@@ -41,7 +34,6 @@ for t in TABELAS:
     except Exception as e:
         print(f"XX  {t}: erro - {e}")
         nao_existem.append(t)
-
 print()
 print("=" * 60)
 print(f"RESUMO: {len(existem)} tabelas com dados / {len(nao_existem)} em falta")
