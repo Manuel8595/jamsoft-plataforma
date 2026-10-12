@@ -76,6 +76,28 @@ def listar_utilizadores():
 
 
 def registar_utilizador(email, senha, nome):
+    """Regista no Supabase Auth E na tabela plataforma_utilizadores."""
+    # 1. Criar no Supabase Auth (para poder fazer login)
+    url_auth = f"{SUPABASE_URL}/auth/v1/signup"
+    headers_auth = {
+        "apikey": SUPABASE_KEY,
+        "Content-Type": "application/json",
+    }
+    dados_auth = {
+        "email": email,
+        "password": senha,
+        "data": {"nome": nome},
+    }
+    try:
+        r_auth = requests.post(url_auth, headers=headers_auth, json=dados_auth, timeout=10)
+        if r_auth.status_code not in (200, 201):
+            print(f"[Registo] Erro Auth: {r_auth.status_code} - {r_auth.text[:200]}")
+            return False
+    except Exception as e:
+        print(f"[Registo] Erro Auth: {e}")
+        return False
+
+    # 2. Guardar metadados na tabela plataforma_utilizadores
     senha_hash = gerar_hash(senha)
     url = f"{SUPABASE_URL}/rest/v1/plataforma_utilizadores"
     dados = {
@@ -87,7 +109,10 @@ def registar_utilizador(email, senha, nome):
         "email_verificado": True,
     }
     r = requests.post(url, headers=_headers(), json=dados, timeout=10)
-    return r.status_code in (200, 201)
+    if r.status_code not in (200, 201):
+        print(f"[Registo] Erro tabela: {r.status_code} - {r.text[:200]}")
+        return False
+    return True
 
 
 def autenticar(email, senha):
@@ -126,6 +151,9 @@ def autenticar(email, senha):
 
 
 def alterar_senha(user_id, senha_antiga, senha_nova):
+    """Altera a senha no Supabase Auth E na tabela plataforma_utilizadores.
+    Para o Supabase Auth, precisamos do JWT do utilizador (não da anon key).
+    """
     user = None
     for u in listar_utilizadores():
         if u["id"] == user_id:
@@ -135,9 +163,34 @@ def alterar_senha(user_id, senha_antiga, senha_nova):
     if not user:
         return False, "Utilizador nao encontrado"
 
+    # Verificar senha actual na tabela
     if not verificar_senha(senha_antiga, user.get("senha_hash", "")):
         return False, "Senha actual incorrecta"
 
+    # 1. Actualizar no Supabase Auth (usando o JWT do utilizador logado)
+    jwt = None
+    try:
+        import streamlit as st
+        jwt = st.session_state.get("jwt")
+    except Exception:
+        pass
+
+    if jwt:
+        url_auth = f"{SUPABASE_URL}/auth/v1/user"
+        headers_auth = {
+            "apikey": SUPABASE_KEY,
+            "Authorization": f"Bearer {jwt}",
+            "Content-Type": "application/json",
+        }
+        try:
+            r_auth = requests.put(url_auth, headers=headers_auth,
+                                   json={"password": senha_nova}, timeout=10)
+            if r_auth.status_code != 200:
+                print(f"[Senha] Aviso Auth: {r_auth.status_code}")
+        except Exception as e:
+            print(f"[Senha] Aviso Auth: {e}")
+
+    # 2. Actualizar hash na tabela
     novo_hash = gerar_hash(senha_nova)
     url = f"{SUPABASE_URL}/rest/v1/plataforma_utilizadores?id=eq.{user_id}"
     requests.patch(url, headers=_headers(), json={"senha_hash": novo_hash}, timeout=10)
